@@ -142,7 +142,7 @@ class BillingClientImpl extends BillingClient {
    * This receiver is triggered by {@link ProxyBillingActivity}.
    */
   private final ResultReceiver onPurchaseFinishedReceiver =
-      new ResultReceiver(new Handler()) {
+      new ResultReceiver(new Handler(Looper.getMainLooper())) {
         @Override
         public void onReceiveResult(@BillingResponse int resultCode, Bundle resultData) {
           PurchasesUpdatedListener purchasesUpdatedListener = mBroadcastManager.getListener();
