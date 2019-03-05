@@ -25,6 +25,7 @@ import android.os.RemoteException;
 import android.os.ResultReceiver;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.annotation.UiThread;
 import android.support.annotation.VisibleForTesting;
 import android.support.annotation.WorkerThread;
@@ -40,6 +41,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 import org.json.JSONException;
 
 /**
@@ -698,6 +701,27 @@ class BillingClientImpl extends BillingClient {
     mExecutorService.submit(runnable);
   }
 
+  private void executeAsync(@NonNull Runnable runnable, long timeout, final @Nullable Runnable onTimeout) {
+    if (mExecutorService == null) {
+      mExecutorService = Executors.newFixedThreadPool(BillingHelper.NUMBER_OF_CORES);
+    }
+
+    final Future<?> task = mExecutorService.submit(runnable);
+    if (timeout > 0) {
+      mUiThreadHandler.postDelayed(new Runnable() {
+        @Override
+        public void run() {
+          if (!task.isDone() && !task.isCancelled()) {
+            task.cancel(true);
+            if (onTimeout != null) {
+              onTimeout.run();
+            }
+          }
+        }
+      }, timeout);
+    }
+  }
+
   /** Checks if billing on VR is supported for corresponding billing type. */
   private int isBillingSupportedOnVr(@SkuType String skuType) {
     try {
@@ -966,6 +990,7 @@ class BillingClientImpl extends BillingClient {
   /** Connect with Billing service and notify listener about important states. */
   private final class BillingServiceConnection implements ServiceConnection {
     private final BillingClientStateListener mListener;
+    private boolean setupResultNotified = false;
 
     private BillingServiceConnection(@NonNull BillingClientStateListener listener) {
       if (listener == null) {
@@ -982,57 +1007,93 @@ class BillingClientImpl extends BillingClient {
       mListener.onBillingServiceDisconnected();
     }
 
+    private void notifySetupResult(final int result) {
+      if (!setupResultNotified) {
+        setupResultNotified = true;
+        postToUiThread(
+                new Runnable() {
+                  @Override
+                  public void run() {
+                    mListener.onBillingSetupFinished(result);
+                  }
+                });
+      }
+    }
+
     @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
       BillingHelper.logVerbose(TAG, "Billing service connected.");
-
       mService = IInAppBillingService.Stub.asInterface(service);
-      String packageName = mApplicationContext.getPackageName();
       try {
-        int response = BillingResponse.BILLING_UNAVAILABLE;
-        // Determine the highest supported level for Subs.
-        int highestLevelSupportedForSubs = 0;
-        for (int apiVersion = MAX_IAP_VERSION; apiVersion >= MIN_IAP_VERSION; apiVersion--) {
-          response = mService.isBillingSupported(apiVersion, packageName, SkuType.SUBS);
-          if (response == BillingResponse.OK) {
-            highestLevelSupportedForSubs = apiVersion;
-            break;
-          }
-        }
-        mSubscriptionUpdateSupported = highestLevelSupportedForSubs >= 5;
-        mSubscriptionsSupported = highestLevelSupportedForSubs >= 3;
-        if (highestLevelSupportedForSubs < MIN_IAP_VERSION) {
-          BillingHelper.logVerbose(
-              TAG, "In-app billing API does not support subscription on this device.");
-        }
+        executeAsync(
+                new Runnable() {
+                  @Override
+                  public void run() {
+                    int response = BillingResponse.SERVICE_DISCONNECTED;
+                    try {
+                      String packageName = mApplicationContext.getPackageName();
+                      response = BillingResponse.BILLING_UNAVAILABLE;
+                      // Determine the highest supported level for Subs.
+                      int highestLevelSupportedForSubs = 0;
+                      for (int apiVersion = MAX_IAP_VERSION;
+                           apiVersion >= MIN_IAP_VERSION;
+                           apiVersion--) {
+                        response = mService.isBillingSupported(apiVersion, packageName, SkuType.SUBS);
+                        if (response == BillingResponse.OK) {
+                          highestLevelSupportedForSubs = apiVersion;
+                          break;
+                        }
+                      }
+                      mSubscriptionUpdateSupported = highestLevelSupportedForSubs >= 5;
+                      mSubscriptionsSupported = highestLevelSupportedForSubs >= 3;
+                      if (highestLevelSupportedForSubs < MIN_IAP_VERSION) {
+                        BillingHelper.logVerbose(
+                                TAG, "In-app billing API does not support subscription on this device.");
+                      }
 
-        // Determine the highest supported level for InApp.
-        int highestLevelSupportedForInApp = 0;
-        for (int apiVersion = MAX_IAP_VERSION; apiVersion >= MIN_IAP_VERSION; apiVersion--) {
-          response = mService.isBillingSupported(apiVersion, packageName, SkuType.INAPP);
-          if (response == BillingResponse.OK) {
-            highestLevelSupportedForInApp = apiVersion;
-            break;
-          }
-        }
-        mIABv8Supported = highestLevelSupportedForInApp >= 8;
-        mIABv6Supported = highestLevelSupportedForInApp >= 6;
-        if (highestLevelSupportedForInApp < MIN_IAP_VERSION) {
-          BillingHelper.logWarn(
-              TAG, "In-app billing API version 3 is not supported on this device.");
-        }
-        if (response == BillingResponse.OK) {
-          mClientState = ClientState.CONNECTED;
-        } else {
-          mClientState = ClientState.DISCONNECTED;
-          mService = null;
-        }
-        mListener.onBillingSetupFinished(response);
-      } catch (final RemoteException e) {
-        BillingHelper.logWarn(TAG, "RemoteException while setting up in-app billing" + e);
+                      // Determine the highest supported level for InApp.
+                      int highestLevelSupportedForInApp = 0;
+                      for (int apiVersion = MAX_IAP_VERSION;
+                           apiVersion >= MIN_IAP_VERSION;
+                           apiVersion--) {
+                        response = mService.isBillingSupported(apiVersion, packageName, SkuType.INAPP);
+                        if (response == BillingResponse.OK) {
+                          highestLevelSupportedForInApp = apiVersion;
+                          break;
+                        }
+                      }
+                      mIABv8Supported = highestLevelSupportedForInApp >= 8;
+                      mIABv6Supported = highestLevelSupportedForInApp >= 6;
+                      if (highestLevelSupportedForInApp < MIN_IAP_VERSION) {
+                        BillingHelper.logWarn(
+                                TAG, "In-app billing API version 3 is not supported on this device.");
+                      }
+                      if (response == BillingResponse.OK) {
+                        mClientState = ClientState.CONNECTED;
+                      } else {
+                        mClientState = ClientState.DISCONNECTED;
+                        mService = null;
+                      }
+                    } catch (RemoteException e) {
+                      BillingHelper.logWarn(
+                              TAG, "Exception while checking if billing is supported; try to reconnect");
+                      mClientState = ClientState.DISCONNECTED;
+                      mService = null;
+                    }
+                    notifySetupResult(response);
+                  }
+                }, 15000L, new Runnable() {
+                  @Override
+                  public void run() {
+                    notifySetupResult(ClientState.DISCONNECTED);
+                  }
+                });
+      } catch (Exception e) {
+        BillingHelper.logWarn(
+                TAG, "Exception while checking if billing is supported; try to reconnect");
         mClientState = ClientState.DISCONNECTED;
         mService = null;
-        mListener.onBillingSetupFinished(BillingResponse.SERVICE_DISCONNECTED);
+        notifySetupResult(ClientState.DISCONNECTED);
       }
     }
   }
