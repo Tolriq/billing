@@ -8,6 +8,10 @@ Original version lacks proper asynchronous initialisation code:
    
    https://issuetracker.google.com/issues/123117066
    
-This fork fixes that until an official release is made.
+This fork fixes (until an official release is made):
+- Wrong asynchronous code
+- Proper timeout and cancellation of asynchronous methods
+- Support initialisation of the library in background thread to avoid slow PackageManager calls on main thread.
+
 
 Please note that official 1.2.1 version should not be used due to tons of blocking calls.
