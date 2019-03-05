@@ -1085,7 +1085,9 @@ class BillingClientImpl extends BillingClient {
                 }, 15000L, new Runnable() {
                   @Override
                   public void run() {
-                    notifySetupResult(ClientState.DISCONNECTED);
+                    mClientState = ClientState.DISCONNECTED;
+                    mService = null;
+                    notifySetupResult(BillingResponse.SERVICE_DISCONNECTED);
                   }
                 });
       } catch (Exception e) {
@@ -1093,7 +1095,7 @@ class BillingClientImpl extends BillingClient {
                 TAG, "Exception while checking if billing is supported; try to reconnect");
         mClientState = ClientState.DISCONNECTED;
         mService = null;
-        notifySetupResult(ClientState.DISCONNECTED);
+        notifySetupResult(BillingResponse.SERVICE_DISCONNECTED);
       }
     }
   }
