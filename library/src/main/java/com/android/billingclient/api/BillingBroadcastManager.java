@@ -1,3 +1,9 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.api;
 
 import android.app.Activity;
@@ -44,7 +50,7 @@ class BillingBroadcastManager {
   }
 
   void registerReceiver() {
-    mContext.registerReceiver(mReceiver, new IntentFilter(ACTION));
+    mReceiver.register(mContext, new IntentFilter(ACTION));
   }
 
   PurchasesUpdatedListener getListener() {
@@ -58,18 +64,33 @@ class BillingBroadcastManager {
    * Activity#onDestroy()}). Otherwise there will be a memory leak.
    */
   void destroy() {
-    try {
-      mContext.unregisterReceiver(mReceiver);
-    } catch (IllegalArgumentException ex) {
-      BillingHelper.logWarn(TAG, "Receiver was already unregistered: " + ex);
-    }
+    mReceiver.unRegister(mContext);
   }
 
   private class BillingBroadcastReceiver extends BroadcastReceiver {
     private final PurchasesUpdatedListener mListener;
+    private boolean mIsRegistered;
 
     private BillingBroadcastReceiver(@NonNull PurchasesUpdatedListener listener) {
       mListener = listener;
+    }
+
+    /** This method only registers receiver if it was not registered yet */
+    public void register(Context context, IntentFilter filer) {
+      if (!mIsRegistered) {
+        context.registerReceiver(mReceiver, filer);
+        mIsRegistered = true;
+      }
+    }
+
+    /** This method only unregisters receiver if it was registered before to avoid exception */
+    public void unRegister(Context context) {
+      if (mIsRegistered) {
+        context.unregisterReceiver(mReceiver);
+        mIsRegistered = false;
+      } else {
+        BillingHelper.logWarn(TAG, "Receiver is not registered.");
+      }
     }
 
     @Override

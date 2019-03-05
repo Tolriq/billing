@@ -1,3 +1,9 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.util;
 
 import android.content.Intent;
@@ -14,7 +20,10 @@ public final class BillingHelper {
   // Keys for the responses from InAppBillingService
   public static final String RESPONSE_CODE = "RESPONSE_CODE";
   public static final String RESPONSE_GET_SKU_DETAILS_LIST = "DETAILS_LIST";
-  public static final String RESPONSE_BUY_INTENT = "BUY_INTENT";
+  /** Key in the response bundle of getBuyIntent for the purchase intent */
+  public static final String RESPONSE_BUY_INTENT_KEY = "BUY_INTENT";
+  /** Key in the response bundle of getSubsManagement for the subs management intent */
+  public static final String RESPONSE_SUBS_MANAGEMENT_INTENT_KEY = "SUBS_MANAGEMENT_INTENT";
   // StringArrayList containing the list of SKUs
   public static final String RESPONSE_INAPP_ITEM_LIST = "INAPP_PURCHASE_ITEM_LIST";
   // StringArrayList containing the purchase information
@@ -26,6 +35,10 @@ public final class BillingHelper {
   // Keys for Purchase data parsing
   private static final String RESPONSE_INAPP_PURCHASE_DATA = "INAPP_PURCHASE_DATA";
   private static final String RESPONSE_INAPP_SIGNATURE = "INAPP_DATA_SIGNATURE";
+  /** Field's key to hold library version key constant. */
+  public static final String LIBRARY_VERSION_KEY = "libraryVersion";
+  // Keys for bundle used in subscription management intent
+  public static final String EXTRA_PARAM_KEY_SUBS_PRICE_CHANGE = "subs_price_change";
 
   /** Total number of cores of current device */
   public static int NUMBER_OF_CORES = Runtime.getRuntime().availableProcessors();

@@ -1,13 +1,16 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.api;
 
 import android.text.TextUtils;
-
 import com.android.billingclient.api.BillingClient.BillingResponse;
-
+import java.util.List;
 import org.json.JSONException;
 import org.json.JSONObject;
-
-import java.util.List;
 
 /** Represents an in-app billing purchase. */
 public class Purchase {
@@ -33,11 +36,6 @@ public class Purchase {
   /** Returns the application package from which the purchase originated. */
   public String getPackageName() {
     return mParsedJson.optString("packageName");
-  }
-
-  /** Returns the developerPayload from which the purchase originated. */
-  public String getDeveloperPayload() {
-      return mParsedJson.optString("developerPayload");
   }
 
   /** Returns the product Id. */

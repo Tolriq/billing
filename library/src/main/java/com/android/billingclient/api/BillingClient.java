@@ -1,3 +1,9 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.api;
 
 import static java.lang.annotation.RetentionPolicy.SOURCE;
@@ -52,7 +58,8 @@ public abstract class BillingClient {
     FeatureType.SUBSCRIPTIONS,
     FeatureType.SUBSCRIPTIONS_UPDATE,
     FeatureType.IN_APP_ITEMS_ON_VR,
-    FeatureType.SUBSCRIPTIONS_ON_VR
+    FeatureType.SUBSCRIPTIONS_ON_VR,
+    FeatureType.PRICE_CHANGE_CONFIRMATION
   })
   @Retention(SOURCE)
   public @interface FeatureType {
@@ -64,6 +71,8 @@ public abstract class BillingClient {
     String IN_APP_ITEMS_ON_VR = "inAppItemsOnVr";
     /** Purchase/query for subscriptions on VR. */
     String SUBSCRIPTIONS_ON_VR = "subscriptionsOnVr";
+    /** Launch a price change confirmation flow. */
+    String PRICE_CHANGE_CONFIRMATION = "priceChangeConfirmation";
   }
 
   /** Possible response codes. */
@@ -114,6 +123,28 @@ public abstract class BillingClient {
     int ITEM_ALREADY_OWNED = 7;
     /** Failure to consume since item is not owned */
     int ITEM_NOT_OWNED = 8;
+  }
+
+  /**
+   * Developers are able to specify whether this app is child directed or not to ensure compliance
+   * with US COPPA & EEA age of consent laws.
+   *
+   * <p>This is most relevant for rewarded skus as child directed applications are explicitly not
+   * allowed to collect information that can be used to personalize the rewarded videos to the user.
+   */
+  @IntDef({
+    ChildDirected.UNSPECIFIED,
+    ChildDirected.CHILD_DIRECTED,
+    ChildDirected.NOT_CHILD_DIRECTED,
+  })
+  @Retention(SOURCE)
+  public @interface ChildDirected {
+    /** App has not specified whether it is child directed or not. */
+    int UNSPECIFIED = 0;
+    /** App indicates it is child directed and applicable actions will be handled appropriately. */
+    int CHILD_DIRECTED = 1;
+    /** App indicates it is NOT child directed. */
+    int NOT_CHILD_DIRECTED = 2;
   }
 
   /** Builder to configure and create a BillingClient instance. */
@@ -223,6 +254,22 @@ public abstract class BillingClient {
   public abstract int launchBillingFlow(Activity activity, BillingFlowParams params);
 
   /**
+   * Initiate a flow to confirm the change of price for an item subscribed by the user.
+   *
+   * <p>When the price of a user subscribed item has changed, launch this flow to take users to
+   * a screen with price change information. User can confirm the new price or cancel the flow.
+   *
+   * @param activity An activity reference from which the billing flow will be launched.
+   * @param params Params specific to the request {@link BillingFlowParams}).
+   * @param listener Implement it to get the result of your price change flow.
+   */
+  @UiThread
+  public abstract void launchPriceChangeConfirmationFlow(
+      Activity activity,
+      PriceChangeFlowParams params,
+      @NonNull PriceChangeConfirmationListener listener);
+
+  /**
    * Get purchases details for all the items bought within your app. This method uses a cache of
    * Google Play Store app without initiating a network request.
    *
@@ -273,4 +320,29 @@ public abstract class BillingClient {
   @UiThread
   public abstract void queryPurchaseHistoryAsync(
       @SkuType String skuType, PurchaseHistoryResponseListener listener);
+
+  /**
+   * Loads a rewarded sku in the background and returns the result asynchronously.
+   *
+   * <p>If the rewarded sku is available, the response will be BILLING_RESULT_OK. Otherwise the
+   * response will be ITEM_UNAVAILABLE. There is no guarantee that a rewarded sku will always be
+   * available. After a successful response, only then should the offer be given to a user to obtain
+   * a rewarded item and call launchBillingFlow.
+   *
+   * @param params Params specific to this load request {@link RewardLoadParams}
+   * @param listener Implement it to get the result of the load operation returned asynchronously
+   *     through the callback with the {@link BillingResponse}
+   */
+  @UiThread
+  public abstract void loadRewardedSku(RewardLoadParams params, RewardResponseListener listener);
+
+  /**
+   * Developers are able to specify whether this app is child directed or not to ensure compliance
+   * with US COPPA & EEA age of consent laws.
+   *
+   * <p>This is most relevant for rewarded skus as child directed applications are explicitly not
+   * allowed to collect information that can be used to personalize the rewarded videos to the user.
+   */
+  @UiThread
+  public abstract void setChildDirected(@ChildDirected int childDirected);
 }

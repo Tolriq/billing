@@ -278,4 +278,12 @@ interface IInAppBillingService {
     */
     int isBillingSupportedExtraParams(int apiVersion, String packageName, String type,
         in Bundle extraParams);
+
+    /**
+    *
+    * Guessed method from code as V8 API is undocumented currently
+    *
+    */
+    Bundle getSubscriptionManagementIntent(int apiVersion, String packageName, String sku,
+        String type, in Bundle extraParams);
 }

@@ -1,3 +1,9 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.api;
 
 import android.text.TextUtils;
@@ -123,6 +129,20 @@ public class SkuDetails {
    */
   public String getIntroductoryPriceCycles() {
     return mParsedJson.optString("introductoryPriceCycles");
+  }
+
+  /**
+   * Returns true if sku is rewarded instead of paid.  If rewarded, developer should call
+   * {@link BillingClient#loadRewardedSku} before attempting to launch purchase for in order to
+   * ensure the reward is available to the user.
+   */
+  public boolean isRewarded() {
+    return mParsedJson.has("rewardToken");
+  }
+
+  /** Internal billing library getter to pass along reward information to getBuyIntent. */
+  /* package */ String rewardToken() {
+    return mParsedJson.optString("rewardToken");
   }
 
   @Override

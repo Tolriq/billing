@@ -1,33 +1,42 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.api;
 
 import static com.android.billingclient.util.BillingHelper.INAPP_CONTINUATION_TOKEN;
-import static com.android.billingclient.util.BillingHelper.RESPONSE_BUY_INTENT;
+import static com.android.billingclient.util.BillingHelper.RESPONSE_BUY_INTENT_KEY;
+import static com.android.billingclient.util.BillingHelper.RESPONSE_SUBS_MANAGEMENT_INTENT_KEY;
 import static java.lang.annotation.RetentionPolicy.SOURCE;
 
 import android.app.Activity;
-import android.content.BroadcastReceiver;
+import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.ResultReceiver;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.UiThread;
 import android.support.annotation.VisibleForTesting;
 import android.support.annotation.WorkerThread;
 import android.text.TextUtils;
+import com.android.billingclient.BuildConfig;
 import com.android.billingclient.api.Purchase.PurchasesResult;
 import com.android.billingclient.api.SkuDetails.SkuDetailsResult;
 import com.android.billingclient.util.BillingHelper;
 import com.android.vending.billing.IInAppBillingService;
 import java.lang.annotation.Retention;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -67,17 +76,19 @@ class BillingClientImpl extends BillingClient {
 
   private @ClientState int mClientState = ClientState.DISCONNECTED;
 
+  private @ChildDirected int mChildDirected = ChildDirected.UNSPECIFIED;
+
   /** A list of SKUs inside getSkuDetails request bundle. */
   private static final String GET_SKU_DETAILS_ITEM_LIST = "ITEM_ID_LIST";
 
-  /** Field's key to hold VR related constant. */
-  private static final String KEY_VR = "vr";
+  /** Version Name of the current library. */
+  private static final String LIBRARY_VERSION = BuildConfig.VERSION_NAME;
 
-  /** Field's key to hold library version key constant. */
-  private static final String LIBRARY_VERSION_KEY = "libraryVersion";
+  /** Maximum IAP version currently supported. */
+  private static final int MAX_IAP_VERSION = 8;
 
-  /** Field's key value to hold current library version. */
-  private static final String LIBRARY_VERSION = "1.0";
+  /** Minimum IAP version currently supported. */
+  private static final int MIN_IAP_VERSION = 3;
 
   /** Main thread handler to post results from Executor. */
   private final Handler mUiThreadHandler = new Handler();
@@ -109,31 +120,35 @@ class BillingClientImpl extends BillingClient {
   private boolean mIABv6Supported;
 
   /**
+   * Indicates if IAB v8 or higher is supported.
+   */
+  private boolean mIABv8Supported;
+
+  /**
    * Service that helps us to keep a pool of background threads suitable for current device specs.
    */
   private ExecutorService mExecutorService;
 
+  @VisibleForTesting
+  void setExecutorService(ExecutorService executorService) {
+    mExecutorService = executorService;
+  }
+
   /**
-   * This receiver is triggered by local broadcast, once {@link ProxyBillingActivity} got the result
-   * from Play Billing service in regards to current purchase process.
+   * This receiver is triggered by {@link ProxyBillingActivity}.
    */
-  private final BroadcastReceiver onPurchaseFinishedReceiver =
-      new BroadcastReceiver() {
+  private final ResultReceiver onPurchaseFinishedReceiver =
+      new ResultReceiver(new Handler()) {
         @Override
-        public void onReceive(Context context, Intent intent) {
+        public void onReceiveResult(@BillingResponse int resultCode, Bundle resultData) {
           PurchasesUpdatedListener purchasesUpdatedListener = mBroadcastManager.getListener();
           if (purchasesUpdatedListener == null) {
             BillingHelper.logWarn(
                 TAG, "PurchasesUpdatedListener is null - no way to return the response.");
             return;
           }
-          // Receiving the result from local broadcast and triggering a callback on listener.
-          @BillingResponse
-          int responseCode =
-              intent.getIntExtra(ProxyBillingActivity.RESPONSE_CODE, BillingResponse.ERROR);
-          Bundle resultData = intent.getBundleExtra(ProxyBillingActivity.RESPONSE_BUNDLE);
           List<Purchase> purchases = BillingHelper.extractPurchases(resultData);
-          purchasesUpdatedListener.onPurchasesUpdated(responseCode, purchases);
+          purchasesUpdatedListener.onPurchasesUpdated(resultCode, purchases);
         }
       };
 
@@ -163,6 +178,9 @@ class BillingClientImpl extends BillingClient {
 
       case FeatureType.SUBSCRIPTIONS_ON_VR:
         return isBillingSupportedOnVr(SkuType.SUBS);
+
+      case FeatureType.PRICE_CHANGE_CONFIRMATION:
+        return mIABv8Supported ? BillingResponse.OK : BillingResponse.FEATURE_NOT_SUPPORTED;
 
       default:
         BillingHelper.logWarn(TAG, "Unsupported feature: " + feature);
@@ -203,12 +221,6 @@ class BillingClientImpl extends BillingClient {
     // Start listening for asynchronous purchase results via PURCHASES_UPDATED broadcasts
     mBroadcastManager.registerReceiver();
 
-    // Subscribe to LocalBroadcastManager to get the synchronous purchase result from
-    // ProxyBillingActivity
-    IntentFilter purchaseIntent = new IntentFilter(ProxyBillingActivity.RESPONSE_INTENT_ACTION);
-    LocalBroadcastManager.getInstance(mApplicationContext)
-        .registerReceiver(onPurchaseFinishedReceiver, purchaseIntent);
-
     // Connection to billing service
     BillingHelper.logVerbose(TAG, "Starting in-app billing setup.");
     mServiceConnection = new BillingServiceConnection(listener);
@@ -232,7 +244,7 @@ class BillingClientImpl extends BillingClient {
           // See: https://github.com/googlesamples/android-play-billing/issues/62 for more context.
           Intent explicitServiceIntent = new Intent(serviceIntent);
           explicitServiceIntent.setComponent(component);
-          explicitServiceIntent.putExtra(LIBRARY_VERSION_KEY, LIBRARY_VERSION);
+          explicitServiceIntent.putExtra(BillingHelper.LIBRARY_VERSION_KEY, LIBRARY_VERSION);
           boolean connectionResult =
               mApplicationContext.bindService(
                   explicitServiceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
@@ -259,75 +271,167 @@ class BillingClientImpl extends BillingClient {
 
   @Override
   public void endConnection() {
-    LocalBroadcastManager.getInstance(mApplicationContext)
-        .unregisterReceiver(onPurchaseFinishedReceiver);
-    mBroadcastManager.destroy();
-    mClientState = ClientState.CLOSED;
-    if (mServiceConnection != null) {
-      BillingHelper.logVerbose(TAG, "Unbinding from service.");
-      mApplicationContext.unbindService(mServiceConnection);
-      mServiceConnection = null;
+    try {
+      mBroadcastManager.destroy();
+      if (mServiceConnection != null && mService != null) {
+        BillingHelper.logVerbose(TAG, "Unbinding from service.");
+        mApplicationContext.unbindService(mServiceConnection);
+        mServiceConnection = null;
+      }
+      mService = null;
+      if (mExecutorService != null) {
+        mExecutorService.shutdownNow();
+        mExecutorService = null;
+      }
+    } catch (Exception ex) {
+      BillingHelper.logWarn(TAG, "There was an exception while ending connection: " + ex);
+    } finally {
+      mClientState = ClientState.CLOSED;
     }
-    mService = null;
-    if (mExecutorService != null) {
-      mExecutorService.shutdownNow();
-      mExecutorService = null;
+  }
+
+  @Override
+  public void launchPriceChangeConfirmationFlow(
+      Activity activity,
+      PriceChangeFlowParams priceChangeFlowParams,
+      @NonNull final PriceChangeConfirmationListener listener) {
+    if (!isReady()) {
+      listener.onPriceChangeConfirmationResult(BillingResponse.SERVICE_DISCONNECTED);
+      return;
     }
+    if (priceChangeFlowParams == null || priceChangeFlowParams.getSkuDetails() == null) {
+      BillingHelper.logWarn(
+          TAG, "Please fix the input params. priceChangeFlowParams must contain valid sku.");
+      listener.onPriceChangeConfirmationResult(BillingResponse.DEVELOPER_ERROR);
+      return;
+    }
+    String sku = priceChangeFlowParams.getSkuDetails().getSku();
+    if (sku == null) {
+      BillingHelper.logWarn(
+          TAG, "Please fix the input params. priceChangeFlowParams must contain valid sku.");
+      listener.onPriceChangeConfirmationResult(BillingResponse.DEVELOPER_ERROR);
+      return;
+    }
+    if (!mIABv8Supported) {
+      BillingHelper.logWarn(TAG, "Current client doesn't support price change confirmation flow.");
+      listener.onPriceChangeConfirmationResult(BillingResponse.FEATURE_NOT_SUPPORTED);
+      return;
+    }
+
+    Bundle priceChangeIntentBundle;
+    Bundle extraParams = new Bundle();
+    extraParams.putString(BillingHelper.LIBRARY_VERSION_KEY, LIBRARY_VERSION);
+    extraParams.putBoolean(BillingHelper.EXTRA_PARAM_KEY_SUBS_PRICE_CHANGE, true);
+
+    try {
+      priceChangeIntentBundle =
+          mService.getSubscriptionManagementIntent(
+              /* apiVersion= */ 8,
+              mApplicationContext.getPackageName(),
+              sku,
+              SkuType.SUBS,
+              extraParams);
+    } catch (RemoteException ex) {
+      String msg =
+          "RemoteException while launching launching price change flow for sku: "
+              + sku
+              + "; try to reconnect";
+      BillingHelper.logWarn(TAG, msg);
+      listener.onPriceChangeConfirmationResult(BillingResponse.SERVICE_DISCONNECTED);
+      return;
+    }
+
+    int responseCode = BillingHelper.getResponseCodeFromBundle(priceChangeIntentBundle, TAG);
+    if (responseCode != BillingResponse.OK) {
+      BillingHelper.logWarn(
+          TAG, "Unable to launch price change flow, error response code: " + responseCode);
+      listener.onPriceChangeConfirmationResult(responseCode);
+      return;
+    }
+
+    final ResultReceiver onPriceChangeConfirmationReceiver =
+        new ResultReceiver(new Handler()) {
+          @Override
+          public void onReceiveResult(@BillingResponse int resultCode, Bundle resultData) {
+            // Receiving the result from local broadcast and triggering a callback on listener.
+            listener.onPriceChangeConfirmationResult(resultCode);
+          }
+        };
+
+    // Launching an invisible activity that will handle the price change flow
+    Intent intent = new Intent(activity, ProxyBillingActivity.class);
+    PendingIntent pendingIntent =
+        priceChangeIntentBundle.getParcelable(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY);
+    intent.putExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY, pendingIntent);
+    intent.putExtra(ProxyBillingActivity.KEY_RESULT_RECEIVER, onPriceChangeConfirmationReceiver);
+    // We need an activity reference here to avoid using FLAG_ACTIVITY_NEW_TASK.
+    // But we don't want to keep a reference to it inside the field to avoid memory leaks.
+    // Plus all the other methods need just a Context reference, so could be used from the
+    // Service or Application.
+    activity.startActivity(intent);
   }
 
   @Override
   public int launchBillingFlow(Activity activity, BillingFlowParams params) {
     if (!isReady()) {
-      return BillingResponse.SERVICE_DISCONNECTED;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.SERVICE_DISCONNECTED);
     }
 
     @SkuType String skuType = params.getSkuType();
     String newSku = params.getSku();
-    String developerPayload = params.getDeveloperPayload();
+    SkuDetails skuDetails = params.getSkuDetails();
+    boolean rewardedSku = skuDetails != null && skuDetails.isRewarded();
 
     // Checking for mandatory params fields
     if (newSku == null) {
       BillingHelper.logWarn(TAG, "Please fix the input params. SKU can't be null.");
-      return BillingResponse.DEVELOPER_ERROR;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.DEVELOPER_ERROR);
     }
 
     if (skuType == null) {
       BillingHelper.logWarn(TAG, "Please fix the input params. SkuType can't be null.");
-      return BillingResponse.DEVELOPER_ERROR;
-    }
-
-    if (params.getOldSkus() != null && params.getOldSkus().size() < 1) {
-      BillingHelper.logWarn(TAG, "Please fix the input params. OldSkus size can't be 0.");
-      return BillingResponse.DEVELOPER_ERROR;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.DEVELOPER_ERROR);
     }
 
     // Checking for requested features support
     if (skuType.equals(SkuType.SUBS) && !mSubscriptionsSupported) {
       BillingHelper.logWarn(TAG, "Current client doesn't support subscriptions.");
-      return BillingResponse.FEATURE_NOT_SUPPORTED;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.FEATURE_NOT_SUPPORTED);
     }
 
-    boolean isSubscriptionUpdate = (params.getOldSkus() != null);
+    boolean isSubscriptionUpdate = (params.getOldSku() != null);
 
     if (isSubscriptionUpdate && !mSubscriptionUpdateSupported) {
       BillingHelper.logWarn(TAG, "Current client doesn't support subscriptions update.");
-      return BillingResponse.FEATURE_NOT_SUPPORTED;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.FEATURE_NOT_SUPPORTED);
     }
 
     if (params.hasExtraParams() && !mIABv6Supported) {
       BillingHelper.logWarn(TAG, "Current client doesn't support extra params for buy intent.");
-      return BillingResponse.FEATURE_NOT_SUPPORTED;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.FEATURE_NOT_SUPPORTED);
+    }
+
+    if (rewardedSku && !mIABv6Supported) {
+      BillingHelper.logWarn(TAG, "Current client doesn't support extra params for buy intent.");
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.FEATURE_NOT_SUPPORTED);
     }
 
     try {
       BillingHelper.logVerbose(
-          TAG, "Constructing buy intent for " + newSku + ", " + "item type: " + skuType);
+          TAG, "Constructing buy intent for " + newSku + ", item type: " + skuType);
 
       Bundle buyIntentBundle;
       // If IAB v6 is supported, we always try to use buyIntentExtraParams and report the version
       if (mIABv6Supported) {
         Bundle extraParams = constructExtraParams(params);
-        extraParams.putString(LIBRARY_VERSION_KEY, LIBRARY_VERSION);
+        extraParams.putString(BillingHelper.LIBRARY_VERSION_KEY, LIBRARY_VERSION);
+        if (rewardedSku) {
+          extraParams.putString(BillingFlowParams.EXTRA_PARAM_KEY_RSKU, skuDetails.rewardToken());
+          if (mChildDirected == ChildDirected.CHILD_DIRECTED
+              || mChildDirected == ChildDirected.NOT_CHILD_DIRECTED) {
+            extraParams.putInt(BillingFlowParams.EXTRA_PARAM_CHILD_DIRECTED, mChildDirected);
+          }
+        }
         int apiVersion = (params.getVrPurchaseFlow()) ? 7 : 6;
         buyIntentBundle =
             mService.getBuyIntentExtraParams(
@@ -335,7 +439,7 @@ class BillingClientImpl extends BillingClient {
                 mApplicationContext.getPackageName(),
                 newSku,
                 skuType,
-                developerPayload,
+                null,
                 extraParams);
       } else if (isSubscriptionUpdate) {
         // For subscriptions update we are calling corresponding service method
@@ -343,10 +447,10 @@ class BillingClientImpl extends BillingClient {
             mService.getBuyIntentToReplaceSkus(
                 /* apiVersion */ 5,
                 mApplicationContext.getPackageName(),
-                params.getOldSkus(),
+                Arrays.asList(params.getOldSku()),
                 newSku,
                 SkuType.SUBS,
-                developerPayload);
+                /* developerPayload */ null);
       } else {
         buyIntentBundle =
             mService.getBuyIntent(
@@ -354,17 +458,19 @@ class BillingClientImpl extends BillingClient {
                 mApplicationContext.getPackageName(),
                 newSku,
                 skuType,
-                developerPayload);
+                /* developerPayload */ null);
       }
 
       int responseCode = BillingHelper.getResponseCodeFromBundle(buyIntentBundle, TAG);
       if (responseCode != BillingResponse.OK) {
         BillingHelper.logWarn(TAG, "Unable to buy item, Error response code: " + responseCode);
-        return responseCode;
+        return broadcastFailureAndReturnBillingResponse(responseCode);
       }
       // Launching an invisible activity that will handle the purchase result
       Intent intent = new Intent(activity, ProxyBillingActivity.class);
-      intent.putExtra(RESPONSE_BUY_INTENT, buyIntentBundle.getParcelable(RESPONSE_BUY_INTENT));
+      intent.putExtra(ProxyBillingActivity.KEY_RESULT_RECEIVER, onPurchaseFinishedReceiver);
+      PendingIntent pendingIntent = buyIntentBundle.getParcelable(RESPONSE_BUY_INTENT_KEY);
+      intent.putExtra(RESPONSE_BUY_INTENT_KEY, pendingIntent);
       // We need an activity reference here to avoid using FLAG_ACTIVITY_NEW_TASK.
       // But we don't want to keep a reference to it inside the field to avoid memory leaks.
       // Plus all the other methods need just a Context reference, so could be used from the
@@ -377,10 +483,15 @@ class BillingClientImpl extends BillingClient {
               + newSku
               + "; try to reconnect";
       BillingHelper.logWarn(TAG, msg);
-      return BillingResponse.SERVICE_DISCONNECTED;
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.SERVICE_DISCONNECTED);
     }
 
     return BillingResponse.OK;
+  }
+
+  private int broadcastFailureAndReturnBillingResponse(@BillingResponse int responseCode) {
+    mBroadcastManager.getListener().onPurchasesUpdated(responseCode, /* List<Purchase>= */null);
+    return responseCode;
   }
 
   @Override
@@ -404,6 +515,7 @@ class BillingClientImpl extends BillingClient {
     if (!isReady()) {
       listener.onSkuDetailsResponse(
           BillingResponse.SERVICE_DISCONNECTED, /* skuDetailsList */ null);
+      return;
     }
 
     final @SkuType String skuType = params.getSkuType();
@@ -444,6 +556,7 @@ class BillingClientImpl extends BillingClient {
   public void consumeAsync(final String purchaseToken, final ConsumeResponseListener listener) {
     if (!isReady()) {
       listener.onConsumeResponse(BillingResponse.SERVICE_DISCONNECTED, /* purchaseToken */ null);
+      return;
     }
 
     // Checking for the mandatory argument
@@ -469,6 +582,7 @@ class BillingClientImpl extends BillingClient {
     if (!isReady()) {
       listener.onPurchaseHistoryResponse(
           BillingResponse.SERVICE_DISCONNECTED, /* purchasesList */ null);
+      return;
     }
 
     executeAsync(
@@ -490,25 +604,92 @@ class BillingClientImpl extends BillingClient {
         });
   }
 
+  @Override
+  public void loadRewardedSku(
+      final RewardLoadParams params, final RewardResponseListener listener) {
+
+    if (!mIABv6Supported) {
+      listener.onRewardResponse(BillingResponse.ITEM_UNAVAILABLE);
+      // return unavailable
+      return;
+    }
+
+    executeAsync(
+        new Runnable() {
+          @Override
+          public void run() {
+            Bundle extraParams = new Bundle();
+            extraParams.putString(
+                BillingFlowParams.EXTRA_PARAM_KEY_RSKU, params.getSkuDetails().rewardToken());
+            if (mChildDirected == ChildDirected.CHILD_DIRECTED
+                || mChildDirected == ChildDirected.NOT_CHILD_DIRECTED) {
+              extraParams.putInt(BillingFlowParams.EXTRA_PARAM_CHILD_DIRECTED, mChildDirected);
+            }
+
+            Bundle buyIntentBundle;
+            try {
+              buyIntentBundle =
+                  mService.getBuyIntentExtraParams(
+                      /* apiVersion= */ 6,
+                      mApplicationContext.getPackageName(),
+                      params.getSkuDetails().getSku(),
+                      params.getSkuDetails().getType(),
+                      null,
+                      extraParams);
+            } catch (final RemoteException e) {
+              postToUiThread(
+                  new Runnable() {
+                    @Override
+                    public void run() {
+                      listener.onRewardResponse(BillingResponse.ERROR);
+                    }
+                  });
+              return;
+            }
+
+            final int responseCode = BillingHelper.getResponseCodeFromBundle(buyIntentBundle, TAG);
+
+            postToUiThread(
+                new Runnable() {
+                  @Override
+                  public void run() {
+                    listener.onRewardResponse(responseCode);
+                  }
+                });
+          }
+        });
+  }
+
+  @Override
+  public void setChildDirected(int childDirected) {
+    this.mChildDirected = childDirected;
+  }
+
   private Bundle constructExtraParams(BillingFlowParams params) {
     Bundle extraParams = new Bundle();
 
-    if (!params.getReplaceSkusProration()) {
-      extraParams.putBoolean("replaceSkusProration", false);
+    if (params.getReplaceSkusProrationMode()
+        != BillingFlowParams.ProrationMode.UNKNOWN_SUBSCRIPTION_UPGRADE_DOWNGRADE_POLICY) {
+      extraParams.putInt(
+          BillingFlowParams.EXTRA_PARAM_KEY_REPLACE_SKUS_PRORATION_MODE,
+          params.getReplaceSkusProrationMode());
     }
     if (params.getAccountId() != null) {
-      extraParams.putString("accountId", params.getAccountId());
+      extraParams.putString(BillingFlowParams.EXTRA_PARAM_KEY_ACCOUNT_ID, params.getAccountId());
     }
     if (params.getVrPurchaseFlow()) {
-      extraParams.putBoolean(KEY_VR, true);
+      extraParams.putBoolean(BillingFlowParams.EXTRA_PARAM_KEY_VR, true);
     }
-    if (params.getOldSkus() != null) {
-      extraParams.putStringArrayList("skusToReplace", params.getOldSkus());
+    if (params.getOldSku() != null) {
+      extraParams.putStringArrayList(
+          BillingFlowParams.EXTRA_PARAM_KEY_OLD_SKUS,
+          new ArrayList<>(Arrays.asList(params.getOldSku())));
     }
 
     return extraParams;
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   private void executeAsync(Runnable runnable) {
     if (mExecutorService == null) {
       mExecutorService = Executors.newFixedThreadPool(BillingHelper.NUMBER_OF_CORES);
@@ -531,7 +712,7 @@ class BillingClientImpl extends BillingClient {
           : BillingResponse.FEATURE_NOT_SUPPORTED;
     } catch (RemoteException e) {
       BillingHelper.logWarn(
-          TAG, "RemoteException while checking if billing is supported; " + "try to reconnect");
+          TAG, "RemoteException while checking if billing is supported; try to reconnect");
       return BillingResponse.SERVICE_DISCONNECTED;
     }
   }
@@ -542,7 +723,7 @@ class BillingClientImpl extends BillingClient {
    */
   private Bundle generateVrBundle() {
     Bundle result = new Bundle();
-    result.putBoolean(KEY_VR, true);
+    result.putBoolean(BillingFlowParams.EXTRA_PARAM_KEY_VR, true);
     return result;
   }
 
@@ -551,7 +732,8 @@ class BillingClientImpl extends BillingClient {
     List<SkuDetails> resultList = new ArrayList<>();
 
     // Split the sku list into packs of no more than MAX_SKU_DETAILS_ITEMS_PER_REQUEST elements
-    int startIndex = 0, listSize = skuList.size();
+    int startIndex = 0;
+    int listSize = skuList.size();
     while (startIndex < listSize) {
       // Prepare a network request up to a maximum amount of supported elements
       int endIndex = startIndex + MAX_SKU_DETAILS_ITEMS_PER_REQUEST;
@@ -561,7 +743,7 @@ class BillingClientImpl extends BillingClient {
       ArrayList<String> curSkuList = new ArrayList<>(skuList.subList(startIndex, endIndex));
       Bundle querySkus = new Bundle();
       querySkus.putStringArrayList(GET_SKU_DETAILS_ITEM_LIST, curSkuList);
-      querySkus.putString(LIBRARY_VERSION_KEY, LIBRARY_VERSION);
+      querySkus.putString(BillingHelper.LIBRARY_VERSION_KEY, LIBRARY_VERSION);
       Bundle skuDetails;
       try {
         skuDetails =
@@ -588,7 +770,7 @@ class BillingClientImpl extends BillingClient {
         } else {
           BillingHelper.logWarn(
               TAG,
-              "getSkuDetails() returned a bundle with neither" + " an error nor a detail list.");
+              "getSkuDetails() returned a bundle with neither an error nor a detail list.");
           return new SkuDetailsResult(BillingResponse.ERROR, resultList);
         }
       }
@@ -626,7 +808,7 @@ class BillingClientImpl extends BillingClient {
    */
   private PurchasesResult queryPurchasesInternal(@SkuType String skuType, boolean queryHistory) {
     BillingHelper.logVerbose(
-        TAG, "Querying owned items, item type: " + skuType + "; " + "history: " + queryHistory);
+        TAG, "Querying owned items, item type: " + skuType + "; history: " + queryHistory);
 
     String continueToken = null;
     List<Purchase> resultList = new ArrayList<>();
@@ -806,79 +988,39 @@ class BillingClientImpl extends BillingClient {
 
       mService = IInAppBillingService.Stub.asInterface(service);
       String packageName = mApplicationContext.getPackageName();
-      mSubscriptionsSupported = false;
-      mSubscriptionUpdateSupported = false;
-      mIABv6Supported = false;
-      // The code below tries to figure out, which IAB API version and features are supported by
-      // current client (Play Store app on this device).
-      // First, it checks for IABv6 with subscriptions to avoid extra queries for most of the
-      // clients.
-      // Second, it checks if IABv6 is supported for in-app only items.
-      // Third, it checks for IABv5 for subscription only (since only getBuyIntentToReplaceSku was
-      // added during that release).
-      // And finally it checks for IABv3 for both subscriptions and inapp items.
       try {
-        // Check for in-app billing API v6 support with subscriptions. This is needed for
-        // getPurchaseHistory and getBuyIntentExtraParams methods.
-        @BillingResponse
-        int response = mService.isBillingSupported(/* apiVersion */ 6, packageName, SkuType.SUBS);
-
-        if (response == BillingResponse.OK) {
-          BillingHelper.logVerbose(TAG, "In-app billing API version 6 with subs is supported.");
-          mIABv6Supported = true;
-          mSubscriptionsSupported = true;
-          mSubscriptionUpdateSupported = true;
-        } else {
-          // Check for in-app billing API v6 support without subcriptions. This is needed for
-          // getPurchaseHistory and getBuyIntentExtraParams methods.
-          // noinspection WrongConstant
-          response = mService.isBillingSupported(/* apiVersion */ 6, packageName, SkuType.INAPP);
-
+        int response = BillingResponse.BILLING_UNAVAILABLE;
+        // Determine the highest supported level for Subs.
+        int highestLevelSupportedForSubs = 0;
+        for (int apiVersion = MAX_IAP_VERSION; apiVersion >= MIN_IAP_VERSION; apiVersion--) {
+          response = mService.isBillingSupported(apiVersion, packageName, SkuType.SUBS);
           if (response == BillingResponse.OK) {
-            BillingHelper.logVerbose(TAG, "In-app billing API without subs version 6 supported.");
-            mIABv6Supported = true;
-          }
-
-          // Check for in-app billing API v5 support. This is needed for
-          // getBuyIntentToReplaceSku which allows for subscription update
-          // noinspection WrongConstant
-          response = mService.isBillingSupported(/* apiVersion */ 5, packageName, SkuType.SUBS);
-
-          if (response == BillingResponse.OK) {
-            BillingHelper.logVerbose(TAG, "In-app billing API version 5 supported.");
-            mSubscriptionUpdateSupported = true;
-            mSubscriptionsSupported = true;
-          } else {
-            // Check for in-app billing API v3 support with subscriptions
-            // noinspection WrongConstant
-            response = mService.isBillingSupported(/* apiVersion */ 3, packageName, SkuType.SUBS);
-
-            if (response == BillingResponse.OK) {
-              BillingHelper.logVerbose(
-                  TAG, "In-app billing API version 3 with subscriptions is supported.");
-              mSubscriptionsSupported = true;
-            } else if (mIABv6Supported) {
-              // If IABv6 without subscriptions was already checked, then we return successful
-              // result even though subscriptions are not supported even for IABv3. This is a valid
-              // case for our Android Wear client, for example.
-              response = BillingResponse.OK;
-            } else {
-              // Check for at least in-app billing API v3 support with in-app items only
-              // noinspection WrongConstant
-              response =
-                  mService.isBillingSupported(/* apiVersion */ 3, packageName, SkuType.INAPP);
-
-              if (response == BillingResponse.OK) {
-                BillingHelper.logVerbose(
-                    TAG, "In-app billing API version 3 with in-app items is supported.");
-              } else {
-                BillingHelper.logWarn(
-                    TAG, "Even billing API version 3 is not supported on this device.");
-              }
-            }
+            highestLevelSupportedForSubs = apiVersion;
+            break;
           }
         }
+        mSubscriptionUpdateSupported = highestLevelSupportedForSubs >= 5;
+        mSubscriptionsSupported = highestLevelSupportedForSubs >= 3;
+        if (highestLevelSupportedForSubs < MIN_IAP_VERSION) {
+          BillingHelper.logVerbose(
+              TAG, "In-app billing API does not support subscription on this device.");
+        }
 
+        // Determine the highest supported level for InApp.
+        int highestLevelSupportedForInApp = 0;
+        for (int apiVersion = MAX_IAP_VERSION; apiVersion >= MIN_IAP_VERSION; apiVersion--) {
+          response = mService.isBillingSupported(apiVersion, packageName, SkuType.INAPP);
+          if (response == BillingResponse.OK) {
+            highestLevelSupportedForInApp = apiVersion;
+            break;
+          }
+        }
+        mIABv8Supported = highestLevelSupportedForInApp >= 8;
+        mIABv6Supported = highestLevelSupportedForInApp >= 6;
+        if (highestLevelSupportedForInApp < MIN_IAP_VERSION) {
+          BillingHelper.logWarn(
+              TAG, "In-app billing API version 3 is not supported on this device.");
+        }
         if (response == BillingResponse.OK) {
           mClientState = ClientState.CONNECTED;
         } else {

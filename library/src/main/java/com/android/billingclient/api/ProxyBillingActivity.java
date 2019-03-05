@@ -1,39 +1,54 @@
+/**
+ * Play Billing Library is licensed to you under the Android Software Development Kit License
+ * Agreement - https://developer.android.com/studio/terms ("Agreement").  By using the Play Billing
+ * Library, you agree to the terms of this Agreement.
+ */
+
 package com.android.billingclient.api;
+
+import static com.android.billingclient.util.BillingHelper.RESPONSE_BUY_INTENT_KEY;
+import static com.android.billingclient.util.BillingHelper.RESPONSE_SUBS_MANAGEMENT_INTENT_KEY;
 
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.os.Bundle;
+import android.os.ResultReceiver;
 import com.android.billingclient.api.BillingClient.BillingResponse;
 import com.android.billingclient.util.BillingHelper;
 
-import static com.android.billingclient.util.BillingHelper.RESPONSE_BUY_INTENT;
-
 /**
- * An invisible activity that handles the request from {@link BillingClient#launchBillingFlow} event
- * and delivers parsed result to the {@link BillingClient} via {@link LocalBroadcastManager}.
+ * An invisible activity that launches another billing-related activity and delivers parsed result
+ * to the {@link BillingClient} via {@link ResultReceiver}.
  */
 public class ProxyBillingActivity extends Activity {
-  static final String RESPONSE_INTENT_ACTION = "proxy_activity_response_intent_action";
-  static final String RESPONSE_CODE = "response_code_key";
-  static final String RESPONSE_BUNDLE = "response_bundle_key";
+  static final String KEY_RESULT_RECEIVER = "result_receiver";
 
   private static final String TAG = "ProxyBillingActivity";
-  private static final int REQUEST_CODE = 100;
+  private static final int REQUEST_CODE_LAUNCH_ACTIVITY = 100;
+
+  private ResultReceiver mResultReceiver;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
 
     BillingHelper.logVerbose(TAG, "Launching Play Store billing flow");
-    PendingIntent pendingIntent = getIntent().getParcelableExtra(RESPONSE_BUY_INTENT);
+    mResultReceiver = getIntent().getParcelableExtra(KEY_RESULT_RECEIVER);
+    PendingIntent pendingIntent = null;
+    if (getIntent().hasExtra(RESPONSE_BUY_INTENT_KEY)) {
+      pendingIntent = getIntent().getParcelableExtra(RESPONSE_BUY_INTENT_KEY);
+    } else if (getIntent().hasExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY)) {
+      pendingIntent = getIntent().getParcelableExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY);
+    }
 
     try {
       startIntentSenderForResult(
-          pendingIntent.getIntentSender(), REQUEST_CODE, new Intent(), 0, 0, 0);
-    } catch (Throwable e) {
+          pendingIntent.getIntentSender(), REQUEST_CODE_LAUNCH_ACTIVITY, new Intent(), 0, 0, 0);
+    } catch (IntentSender.SendIntentException e) {
       BillingHelper.logWarn(TAG, "Got exception while trying to start a purchase flow: " + e);
-      broadcastResult(BillingResponse.ERROR, null);
+      mResultReceiver.send(BillingResponse.ERROR, null);
       finish();
     }
   }
@@ -42,29 +57,22 @@ public class ProxyBillingActivity extends Activity {
   protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
 
-    if (requestCode == REQUEST_CODE) {
+    if (requestCode == REQUEST_CODE_LAUNCH_ACTIVITY) {
       int responseCode = BillingHelper.getResponseCodeFromIntent(data, TAG);
       if (resultCode != RESULT_OK || responseCode != BillingResponse.OK) {
         BillingHelper.logWarn(
             TAG,
-            "Got purchases updated result with resultCode "
+            "Activity finished with resultCode "
                 + resultCode
                 + " and billing's responseCode: "
                 + responseCode);
       }
-      broadcastResult(responseCode, data == null ? null : data.getExtras());
+      mResultReceiver.send(responseCode, data == null ? null : data.getExtras());
     } else {
       BillingHelper.logWarn(
           TAG, "Got onActivityResult with wrong requestCode: " + requestCode + "; skipping...");
     }
     // Need to finish this invisible activity once we sent back the result
     finish();
-  }
-
-  private void broadcastResult(int responseCode, Bundle resultBundle) {
-    Intent intent = new Intent(RESPONSE_INTENT_ACTION);
-    intent.putExtra(RESPONSE_CODE, responseCode);
-    intent.putExtra(RESPONSE_BUNDLE, resultBundle);
-    LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
   }
 }
