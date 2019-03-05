@@ -2,7 +2,7 @@
 
 It's a fork of the Play Billing Library: https://developer.android.com/google/play/billing/billing_library.html
 
-Original: com.android.billingclient:billing:1.2
+Original: com.android.billingclient:billing:1.2.1
 
 Original version lacks proper asynchronous initialisation code:
    

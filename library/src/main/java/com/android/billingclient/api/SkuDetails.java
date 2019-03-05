@@ -23,6 +23,11 @@ public class SkuDetails {
     mParsedJson = new JSONObject(mOriginalJson);
   }
 
+  /** Returns a String in JSON format that contains Sku details. */
+  public String getOriginalJson() {
+    return mOriginalJson;
+  }
+
   /** Returns the product Id. */
   public String getSku() {
     return mParsedJson.optString("productId");
@@ -170,21 +175,21 @@ public class SkuDetails {
   }
 
   /** Result list and code for querySkuDetailsAsync method */
-  static class SkuDetailsResult {
+  public static class SkuDetailsResult {
     private List<SkuDetails> mSkuDetailsList;
     @BillingResponse private int mResponseCode;
 
-    SkuDetailsResult(@BillingResponse int responseCode, List<SkuDetails> skuDetailsList) {
+    public SkuDetailsResult(@BillingResponse int responseCode, List<SkuDetails> skuDetailsList) {
       this.mSkuDetailsList = skuDetailsList;
       this.mResponseCode = responseCode;
     }
 
-    List<SkuDetails> getSkuDetailsList() {
+    public List<SkuDetails> getSkuDetailsList() {
       return mSkuDetailsList;
     }
 
     @BillingResponse
-    int getResponseCode() {
+    public int getResponseCode() {
       return mResponseCode;
     }
   }

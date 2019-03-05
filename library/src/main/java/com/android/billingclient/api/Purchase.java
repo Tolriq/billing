@@ -111,7 +111,7 @@ public class Purchase {
     private List<Purchase> mPurchaseList;
     @BillingResponse private int mResponseCode;
 
-    PurchasesResult(@BillingResponse int responseCode, List<Purchase> purchasesList) {
+    public PurchasesResult(@BillingResponse int responseCode, List<Purchase> purchasesList) {
       this.mPurchaseList = purchasesList;
       this.mResponseCode = responseCode;
     }

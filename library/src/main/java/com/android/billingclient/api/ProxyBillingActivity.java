@@ -33,24 +33,33 @@ public class ProxyBillingActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    if (savedInstanceState == null) {
+      BillingHelper.logVerbose(TAG, "Launching Play Store billing flow");
+      mResultReceiver = getIntent().getParcelableExtra(KEY_RESULT_RECEIVER);
+      PendingIntent pendingIntent = null;
+      if (getIntent().hasExtra(RESPONSE_BUY_INTENT_KEY)) {
+        pendingIntent = getIntent().getParcelableExtra(RESPONSE_BUY_INTENT_KEY);
+      } else if (getIntent().hasExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY)) {
+        pendingIntent = getIntent().getParcelableExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY);
+      }
 
-    BillingHelper.logVerbose(TAG, "Launching Play Store billing flow");
-    mResultReceiver = getIntent().getParcelableExtra(KEY_RESULT_RECEIVER);
-    PendingIntent pendingIntent = null;
-    if (getIntent().hasExtra(RESPONSE_BUY_INTENT_KEY)) {
-      pendingIntent = getIntent().getParcelableExtra(RESPONSE_BUY_INTENT_KEY);
-    } else if (getIntent().hasExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY)) {
-      pendingIntent = getIntent().getParcelableExtra(RESPONSE_SUBS_MANAGEMENT_INTENT_KEY);
+      try {
+        startIntentSenderForResult(
+            pendingIntent.getIntentSender(), REQUEST_CODE_LAUNCH_ACTIVITY, new Intent(), 0, 0, 0);
+      } catch (IntentSender.SendIntentException e) {
+        BillingHelper.logWarn(TAG, "Got exception while trying to start a purchase flow: " + e);
+        mResultReceiver.send(BillingResponse.ERROR, null);
+        finish();
+      }
+    } else {
+      BillingHelper.logVerbose(TAG, "Launching Play Store billing flow from savedInstanceState");
+      mResultReceiver = savedInstanceState.getParcelable(KEY_RESULT_RECEIVER);
     }
+  }
 
-    try {
-      startIntentSenderForResult(
-          pendingIntent.getIntentSender(), REQUEST_CODE_LAUNCH_ACTIVITY, new Intent(), 0, 0, 0);
-    } catch (IntentSender.SendIntentException e) {
-      BillingHelper.logWarn(TAG, "Got exception while trying to start a purchase flow: " + e);
-      mResultReceiver.send(BillingResponse.ERROR, null);
-      finish();
-    }
+  @Override
+  protected void onSaveInstanceState(Bundle outState) {
+    outState.putParcelable(KEY_RESULT_RECEIVER, mResultReceiver);
   }
 
   @Override

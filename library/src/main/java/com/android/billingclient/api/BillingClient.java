@@ -126,11 +126,30 @@ public abstract class BillingClient {
   }
 
   /**
-   * Developers are able to specify whether this app is child directed or not to ensure compliance
-   * with US COPPA & EEA age of consent laws.
+   * Developers are able to specify whether you would like your app to be treated as child-directed
+   * for purposes of the Children’s Online Privacy Protection Act (COPPA) - <a
+   * href="http://business.ftc.gov/privacy-and-security/childrens-privacy">
+   * http://business.ftc.gov/privacy-and-security/childrens-privacy</a>.
    *
-   * <p>This is most relevant for rewarded skus as child directed applications are explicitly not
-   * allowed to collect information that can be used to personalize the rewarded videos to the user.
+   * <p>This is most relevant for Rewarded Skus.
+   *
+   * <p>If you set this method to {@link ChildDirected.CHILD_DIRECTED}, you will indicate that your
+   * ad requests should be treated as child-directed for purposes of the Children’s Online Privacy
+   * Protection Act (COPPA).
+   *
+   * <p>If you set this method to {@link ChildDirected.NOT_CHILD_DIRECTED}, you will indicate that
+   * your ad requests should not be treated as child-directed for purposes of the Children’s Online
+   * Privacy Protection Act (COPPA).
+   *
+   * <p>If you do not set this, ad requests from this session will include no indication of how you
+   * would like your app treated with respect to COPPA.
+   *
+   * <p>By setting this method, you certify that this notification is accurate and you are
+   * authorized to act on behalf of the owner of the app. You understand that abuse of this
+   * setting may result in termination of your Google account.
+   *
+   * <p>Note: it may take some time for this designation to be fully implemented in applicable
+   * Google services.
    */
   @IntDef({
     ChildDirected.UNSPECIFIED,
@@ -139,17 +158,65 @@ public abstract class BillingClient {
   })
   @Retention(SOURCE)
   public @interface ChildDirected {
-    /** App has not specified whether it is child directed or not. */
+    /** App has not specified whether its ad requests should be treated as child directed or not. */
     int UNSPECIFIED = 0;
-    /** App indicates it is child directed and applicable actions will be handled appropriately. */
+    /** App indicates its ad requests should be treated as child-directed. */
     int CHILD_DIRECTED = 1;
-    /** App indicates it is NOT child directed. */
+    /** App indicates its ad requests should NOT be treated as child-directed. */
     int NOT_CHILD_DIRECTED = 2;
+  }
+
+  /**
+   * Developers are able to specify whether to mark your ad requests to receive treatment for
+   * users in the European Economic Area (EEA) under the age of consent. This feature is designed to
+   * help facilitate compliance with the <a
+   * href="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679">General Data
+   * Protection Regulation (GDPR)</a>. Note that you may have other legal obligations under GDPR.
+   * Please review the European Union's guidance and consult with your own legal counsel. Please
+   * remember that Google's tools are designed to facilitate compliance and do not relieve any
+   * particular publisher of its obligations under the law.
+   *
+   * <p>This is most relevant for Rewarded Skus.
+   *
+   * <p>When using this feature, a Tag For Users under the Age of Consent in Europe (TFUA)
+   * parameter will be included in the ad request. This parameter disables personalized
+   * advertising, including remarketing, for that specific ad request. It also disables requests
+   * to third-party ad vendors, such as ad measurement pixels and third-party ad servers.
+   *
+   * <p>If you set this method to {@link UnderAgeOfConsent.UNDER_AGE_OF_CONSENT}, you will indicate
+   * that you want the ad request to be handled in a manner suitable for users under the age of
+   * consent.
+   *
+   * <p>If you set this method to {@link UnderAgeOfConsent.NOT_UNDER_AGE_OF_CONSENT}, you will
+   * indicate that you don't want the ad request to be handled in a manner suitable for users under
+   * the age of consent.
+   *
+   * <p>If you do not set this method, or set this method to {@link UnderAgeOfConsent.UNSPECIFIED},
+   * ad requests will include no indication of how you would like your app to be handled in a manner
+   * suitable for users under the age of consent.
+   */
+  @IntDef({
+      UnderAgeOfConsent.UNSPECIFIED,
+      UnderAgeOfConsent.UNDER_AGE_OF_CONSENT,
+      UnderAgeOfConsent.NOT_UNDER_AGE_OF_CONSENT,
+  })
+  @Retention(SOURCE)
+  public @interface UnderAgeOfConsent {
+    /** App has not specified how ad requests shall be handled. */
+    int UNSPECIFIED = 0;
+    /** App indicates the ad requests shall be handled in a manner suitable for users under the age
+     * of consent. */
+    int UNDER_AGE_OF_CONSENT = 1;
+    /** App indicates the ad requests shall NOT be handled in a manner suitable for users under the
+     * age of consent. */
+    int NOT_UNDER_AGE_OF_CONSENT = 2;
   }
 
   /** Builder to configure and create a BillingClient instance. */
   public static final class Builder {
     private final Context mContext;
+    @ChildDirected private int mChildDirected = ChildDirected.UNSPECIFIED;
+    @UnderAgeOfConsent private int mUnderAgeOfConsent = UnderAgeOfConsent.UNSPECIFIED;
     private PurchasesUpdatedListener mListener;
 
     private Builder(Context context) {
@@ -161,9 +228,38 @@ public abstract class BillingClient {
      *
      * @param listener Your listener for app initiated and Play Store initiated purchases.
      */
-    @UiThread
+   @UiThread
     public Builder setListener(PurchasesUpdatedListener listener) {
       mListener = listener;
+      return this;
+    }
+
+
+    /**
+     * Developers are able to specify whether this app is child directed or not to ensure compliance
+     * with US COPPA & EEA age of consent laws.
+     *
+     * <p>This is most relevant for rewarded skus as child directed applications are explicitly not
+     * allowed to collect information that can be used to personalize the rewarded videos to the
+     * user.
+     */
+    @UiThread
+    public Builder setChildDirected(@ChildDirected int childDirected) {
+      this.mChildDirected = childDirected;
+      return this;
+    }
+
+    /**
+     * Developers are able to specify whether this app is under age of consent or not to ensure
+     * compliance with US COPPA & EEA age of consent laws.
+     *
+     * <p>This is most relevant for rewarded skus as under age of consent applications are
+     * explicitly not allowed to collect information that can be used to personalize the rewarded
+     * videos to the user.
+     */
+    @UiThread
+    public Builder setUnderAgeOfConsent(@UnderAgeOfConsent int underAgeOfConsent) {
+      this.mUnderAgeOfConsent = underAgeOfConsent;
       return this;
     }
 
@@ -185,7 +281,7 @@ public abstract class BillingClient {
         throw new IllegalArgumentException(
             "Please provide a valid listener for" + " purchases updates.");
       }
-      return new BillingClientImpl(mContext, mListener);
+      return new BillingClientImpl(mContext, mChildDirected, mUnderAgeOfConsent, mListener);
     }
   }
 
@@ -281,7 +377,6 @@ public abstract class BillingClient {
    * @return PurchasesResult The {@link PurchasesResult} containing the list of purchases and the
    *     response code ({@link BillingResponse}
    */
-  @UiThread
   public abstract PurchasesResult queryPurchases(@SkuType String skuType);
 
   /**
@@ -291,9 +386,8 @@ public abstract class BillingClient {
    * @param listener Implement it to get the result of your query operation returned asynchronously
    *     through the callback with the {@link BillingResponse} and the list of {@link SkuDetails}.
    */
-  @UiThread
   public abstract void querySkuDetailsAsync(
-      SkuDetailsParams params, SkuDetailsResponseListener listener);
+      SkuDetailsParams params, @NonNull SkuDetailsResponseListener listener);
 
   /**
    * Consumes a given in-app product. Consuming can only be done on an item that's owned, and as a
@@ -306,8 +400,8 @@ public abstract class BillingClient {
    * @param listener Implement it to get the result of your consume operation returned
    *     asynchronously through the callback with token and {@link BillingResponse} parameters.
    */
-  @UiThread
-  public abstract void consumeAsync(String purchaseToken, ConsumeResponseListener listener);
+  public abstract void consumeAsync(
+      String purchaseToken, @NonNull ConsumeResponseListener listener);
 
   /**
    * Returns the most recent purchase made by the user for each SKU, even if that purchase is
@@ -317,9 +411,8 @@ public abstract class BillingClient {
    * @param listener Implement it to get the result of your query returned asynchronously through
    *     the callback with a {@link PurchasesResult} parameter.
    */
-  @UiThread
   public abstract void queryPurchaseHistoryAsync(
-      @SkuType String skuType, PurchaseHistoryResponseListener listener);
+      @SkuType String skuType, @NonNull PurchaseHistoryResponseListener listener);
 
   /**
    * Loads a rewarded sku in the background and returns the result asynchronously.
@@ -333,16 +426,6 @@ public abstract class BillingClient {
    * @param listener Implement it to get the result of the load operation returned asynchronously
    *     through the callback with the {@link BillingResponse}
    */
-  @UiThread
-  public abstract void loadRewardedSku(RewardLoadParams params, RewardResponseListener listener);
-
-  /**
-   * Developers are able to specify whether this app is child directed or not to ensure compliance
-   * with US COPPA & EEA age of consent laws.
-   *
-   * <p>This is most relevant for rewarded skus as child directed applications are explicitly not
-   * allowed to collect information that can be used to personalize the rewarded videos to the user.
-   */
-  @UiThread
-  public abstract void setChildDirected(@ChildDirected int childDirected);
+  public abstract void loadRewardedSku(
+      RewardLoadParams params, @NonNull RewardResponseListener listener);
 }

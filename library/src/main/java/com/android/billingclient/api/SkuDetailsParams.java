@@ -47,7 +47,7 @@ public class SkuDetailsParams {
      * </ul>
      */
     public Builder setSkusList(List<String> skusList) {
-      this.mSkusList = skusList;
+      this.mSkusList = new ArrayList<>(skusList);
       return this;
     }
 
@@ -69,7 +69,7 @@ public class SkuDetailsParams {
     public SkuDetailsParams build() {
       SkuDetailsParams params = new SkuDetailsParams();
       params.mSkuType = this.mSkuType;
-      params.mSkusList = new ArrayList<>(this.mSkusList);
+      params.mSkusList = this.mSkusList;
       return params;
     }
   }

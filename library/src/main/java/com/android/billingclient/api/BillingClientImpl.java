@@ -54,6 +54,12 @@ class BillingClientImpl extends BillingClient {
   private static final String TAG = "BillingClient";
 
   /**
+   * The maximum duration time in millisecond for a in-app billing background service call.
+   * The caller is notified through listener.
+   */
+  private static final long BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS = 30000L;
+
+  /**
    * The maximum number of items than can be requested by a call to Billing service's
    * getSkuDetails() method
    */
@@ -80,8 +86,6 @@ class BillingClientImpl extends BillingClient {
 
   private @ClientState int mClientState = ClientState.DISCONNECTED;
 
-  private @ChildDirected int mChildDirected = ChildDirected.UNSPECIFIED;
-
   /** A list of SKUs inside getSkuDetails request bundle. */
   private static final String GET_SKU_DETAILS_ITEM_LIST = "ITEM_ID_LIST";
 
@@ -106,6 +110,12 @@ class BillingClientImpl extends BillingClient {
   /** Context of the application that initialized this client. */
   private final Context mApplicationContext;
 
+  /** Whether this client is for child directed use. This is mainly used for rewarded skus. */
+  @ChildDirected private final int mChildDirected;
+
+  /** Whether this client is for under of age consent use. This is mainly used for rewarded skus. */
+  @UnderAgeOfConsent private final int mUnderAgeOfConsent;
+
   /** Service binder */
   private IInAppBillingService mService;
 
@@ -123,9 +133,7 @@ class BillingClientImpl extends BillingClient {
    */
   private boolean mIABv6Supported;
 
-  /**
-   * Indicates if IAB v8 or higher is supported.
-   */
+  /** Indicates if IAB v8 or higher is supported. */
   private boolean mIABv8Supported;
 
   /**
@@ -138,9 +146,7 @@ class BillingClientImpl extends BillingClient {
     mExecutorService = executorService;
   }
 
-  /**
-   * This receiver is triggered by {@link ProxyBillingActivity}.
-   */
+  /** This receiver is triggered by {@link ProxyBillingActivity}. */
   private final ResultReceiver onPurchaseFinishedReceiver =
       new ResultReceiver(new Handler(Looper.getMainLooper())) {
         @Override
@@ -156,9 +162,14 @@ class BillingClientImpl extends BillingClient {
         }
       };
 
-  @UiThread
-  BillingClientImpl(@NonNull Context context, @NonNull PurchasesUpdatedListener listener) {
+  BillingClientImpl(
+      @NonNull Context context,
+      @ChildDirected int childDirected,
+      @UnderAgeOfConsent int underAgeOfConsent,
+      @NonNull PurchasesUpdatedListener listener) {
     mApplicationContext = context.getApplicationContext();
+    mChildDirected = childDirected;
+    mUnderAgeOfConsent = underAgeOfConsent;
     mBroadcastManager = new BillingBroadcastManager(mApplicationContext, listener);
   }
 
@@ -431,9 +442,12 @@ class BillingClientImpl extends BillingClient {
         extraParams.putString(BillingHelper.LIBRARY_VERSION_KEY, LIBRARY_VERSION);
         if (rewardedSku) {
           extraParams.putString(BillingFlowParams.EXTRA_PARAM_KEY_RSKU, skuDetails.rewardToken());
-          if (mChildDirected == ChildDirected.CHILD_DIRECTED
-              || mChildDirected == ChildDirected.NOT_CHILD_DIRECTED) {
+          if (mChildDirected != ChildDirected.UNSPECIFIED) {
             extraParams.putInt(BillingFlowParams.EXTRA_PARAM_CHILD_DIRECTED, mChildDirected);
+          }
+          if (mUnderAgeOfConsent != UnderAgeOfConsent.UNSPECIFIED) {
+            extraParams.putInt(
+                    BillingFlowParams.EXTRA_PARAM_UNDER_AGE_OF_CONSENT, mUnderAgeOfConsent);
           }
         }
         int apiVersion = (params.getVrPurchaseFlow()) ? 7 : 6;
@@ -515,7 +529,7 @@ class BillingClientImpl extends BillingClient {
 
   @Override
   public void querySkuDetailsAsync(
-      SkuDetailsParams params, final SkuDetailsResponseListener listener) {
+      SkuDetailsParams params, @NonNull final SkuDetailsResponseListener listener) {
     if (!isReady()) {
       listener.onSkuDetailsResponse(
           BillingResponse.SERVICE_DISCONNECTED, /* skuDetailsList */ null);
@@ -557,7 +571,8 @@ class BillingClientImpl extends BillingClient {
   }
 
   @Override
-  public void consumeAsync(final String purchaseToken, final ConsumeResponseListener listener) {
+  public void consumeAsync(final String purchaseToken,
+                           @NonNull final ConsumeResponseListener listener) {
     if (!isReady()) {
       listener.onConsumeResponse(BillingResponse.SERVICE_DISCONNECTED, /* purchaseToken */ null);
       return;
@@ -582,7 +597,7 @@ class BillingClientImpl extends BillingClient {
 
   @Override
   public void queryPurchaseHistoryAsync(
-      final @SkuType String skuType, final PurchaseHistoryResponseListener listener) {
+      final @SkuType String skuType, @NonNull final PurchaseHistoryResponseListener listener) {
     if (!isReady()) {
       listener.onPurchaseHistoryResponse(
           BillingResponse.SERVICE_DISCONNECTED, /* purchasesList */ null);
@@ -610,7 +625,7 @@ class BillingClientImpl extends BillingClient {
 
   @Override
   public void loadRewardedSku(
-      final RewardLoadParams params, final RewardResponseListener listener) {
+      final RewardLoadParams params, @NonNull final RewardResponseListener listener) {
 
     if (!mIABv6Supported) {
       listener.onRewardResponse(BillingResponse.ITEM_UNAVAILABLE);
@@ -625,9 +640,12 @@ class BillingClientImpl extends BillingClient {
             Bundle extraParams = new Bundle();
             extraParams.putString(
                 BillingFlowParams.EXTRA_PARAM_KEY_RSKU, params.getSkuDetails().rewardToken());
-            if (mChildDirected == ChildDirected.CHILD_DIRECTED
-                || mChildDirected == ChildDirected.NOT_CHILD_DIRECTED) {
+            if (mChildDirected != ChildDirected.UNSPECIFIED) {
               extraParams.putInt(BillingFlowParams.EXTRA_PARAM_CHILD_DIRECTED, mChildDirected);
+            }
+            if (mUnderAgeOfConsent != UnderAgeOfConsent.UNSPECIFIED) {
+              extraParams.putInt(
+                      BillingFlowParams.EXTRA_PARAM_UNDER_AGE_OF_CONSENT, mUnderAgeOfConsent);
             }
 
             Bundle buyIntentBundle;
@@ -662,11 +680,6 @@ class BillingClientImpl extends BillingClient {
                 });
           }
         });
-  }
-
-  @Override
-  public void setChildDirected(int childDirected) {
-    this.mChildDirected = childDirected;
   }
 
   private Bundle constructExtraParams(BillingFlowParams params) {
@@ -794,8 +807,7 @@ class BillingClientImpl extends BillingClient {
           return new SkuDetailsResult(responseCode, resultList);
         } else {
           BillingHelper.logWarn(
-              TAG,
-              "getSkuDetails() returned a bundle with neither an error nor a detail list.");
+              TAG, "getSkuDetails() returned a bundle with neither an error nor a detail list.");
           return new SkuDetailsResult(BillingResponse.ERROR, resultList);
         }
       }
@@ -945,7 +957,8 @@ class BillingClientImpl extends BillingClient {
 
   /** Consume the purchase and execute listener's callback on the Ui/Main thread */
   @WorkerThread
-  private void consumeInternal(final String purchaseToken, final ConsumeResponseListener listener) {
+  private void consumeInternal(final String purchaseToken,
+                               @NonNull final ConsumeResponseListener listener) {
     try {
       BillingHelper.logVerbose(TAG, "Consuming purchase with token: " + purchaseToken);
       final @BillingResponse int responseCode =
@@ -954,15 +967,13 @@ class BillingClientImpl extends BillingClient {
 
       if (responseCode == BillingResponse.OK) {
         BillingHelper.logVerbose(TAG, "Successfully consumed purchase.");
-        if (listener != null) {
-          postToUiThread(
-              new Runnable() {
-                @Override
-                public void run() {
-                  listener.onConsumeResponse(responseCode, purchaseToken);
-                }
-              });
-        }
+        postToUiThread(
+            new Runnable() {
+              @Override
+              public void run() {
+                listener.onConsumeResponse(responseCode, purchaseToken);
+              }
+            });
       } else {
         BillingHelper.logWarn(
             TAG, "Error consuming purchase with token. Response code: " + responseCode);
@@ -994,9 +1005,6 @@ class BillingClientImpl extends BillingClient {
     private boolean setupResultNotified = false;
 
     private BillingServiceConnection(@NonNull BillingClientStateListener listener) {
-      if (listener == null) {
-        throw new RuntimeException("Please specify a listener to know when init is done.");
-      }
       mListener = listener;
     }
 
@@ -1083,7 +1091,7 @@ class BillingClientImpl extends BillingClient {
                     }
                     notifySetupResult(response);
                   }
-                }, 15000L, new Runnable() {
+                }, BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, new Runnable() {
                   @Override
                   public void run() {
                     mClientState = ClientState.DISCONNECTED;

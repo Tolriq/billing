@@ -22,6 +22,7 @@ public class BillingFlowParams {
   static final String EXTRA_PARAM_KEY_VR = "vr";
   static final String EXTRA_PARAM_KEY_RSKU = "rewardToken";
   static final String EXTRA_PARAM_CHILD_DIRECTED = "childDirected";
+  static final String EXTRA_PARAM_UNDER_AGE_OF_CONSENT = "underAgeOfConsent";
   static final String EXTRA_PARAM_KEY_OLD_SKUS = "skusToReplace";
 
   /** Replace SKU ProrationMode. */
