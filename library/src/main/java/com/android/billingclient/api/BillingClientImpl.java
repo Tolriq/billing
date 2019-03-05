@@ -27,7 +27,6 @@ import android.os.ResultReceiver;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
-import android.support.annotation.UiThread;
 import android.support.annotation.VisibleForTesting;
 import android.support.annotation.WorkerThread;
 import android.text.TextUtils;
@@ -57,7 +56,7 @@ class BillingClientImpl extends BillingClient {
    * The maximum duration time in millisecond for a in-app billing background service call.
    * The caller is notified through listener.
    */
-  private static final long BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS = 30000L;
+  private static final long BACKGROUND_OPERATION_TIMEOUT_IN_MILLISECONDS = 30000L;
 
   /**
    * The maximum number of items than can be requested by a call to Billing service's
@@ -567,6 +566,12 @@ class BillingClientImpl extends BillingClient {
                   }
                 });
           }
+        }, BACKGROUND_OPERATION_TIMEOUT_IN_MILLISECONDS, new Runnable() {
+          @Override
+          public void run() {
+            listener.onSkuDetailsResponse(
+                    BillingResponse.OPERATION_TIMEOUT, /* skuDetailsList */ null);
+          }
         });
   }
 
@@ -591,6 +596,12 @@ class BillingClientImpl extends BillingClient {
           @Override
           public void run() {
             consumeInternal(purchaseToken, listener);
+          }
+        }, BACKGROUND_OPERATION_TIMEOUT_IN_MILLISECONDS, new Runnable() {
+          @Override
+          public void run() {
+            listener.onConsumeResponse(
+                    BillingResponse.OPERATION_TIMEOUT, /* skuDetailsList */ null);
           }
         });
   }
@@ -619,6 +630,12 @@ class BillingClientImpl extends BillingClient {
                         result.getResponseCode(), result.getPurchasesList());
                   }
                 });
+          }
+        }, BACKGROUND_OPERATION_TIMEOUT_IN_MILLISECONDS, new Runnable() {
+          @Override
+          public void run() {
+            listener.onPurchaseHistoryResponse(
+                    BillingResponse.OPERATION_TIMEOUT, /* skuDetailsList */ null);
           }
         });
   }
@@ -679,6 +696,11 @@ class BillingClientImpl extends BillingClient {
                   }
                 });
           }
+        }, BACKGROUND_OPERATION_TIMEOUT_IN_MILLISECONDS, new Runnable() {
+          @Override
+          public void run() {
+            listener.onRewardResponse(BillingResponse.OPERATION_TIMEOUT);
+          }
         });
   }
 
@@ -704,15 +726,6 @@ class BillingClientImpl extends BillingClient {
     }
 
     return extraParams;
-  }
-
-  @SuppressWarnings("FutureReturnValueIgnored")
-  private void executeAsync(Runnable runnable) {
-    if (mExecutorService == null) {
-      mExecutorService = Executors.newFixedThreadPool(BillingHelper.NUMBER_OF_CORES);
-    }
-
-    mExecutorService.submit(runnable);
   }
 
   private void executeAsync(@NonNull Runnable runnable, long timeout, final @Nullable Runnable onTimeout) {
@@ -1091,12 +1104,12 @@ class BillingClientImpl extends BillingClient {
                     }
                     notifySetupResult(response);
                   }
-                }, BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, new Runnable() {
+                }, BACKGROUND_OPERATION_TIMEOUT_IN_MILLISECONDS, new Runnable() {
                   @Override
                   public void run() {
                     mClientState = ClientState.DISCONNECTED;
                     mService = null;
-                    notifySetupResult(BillingResponse.SERVICE_DISCONNECTED);
+                    notifySetupResult(BillingResponse.OPERATION_TIMEOUT);
                   }
                 });
       } catch (Exception e) {

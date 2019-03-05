@@ -87,7 +87,8 @@ public abstract class BillingClient {
     BillingResponse.DEVELOPER_ERROR,
     BillingResponse.ERROR,
     BillingResponse.ITEM_ALREADY_OWNED,
-    BillingResponse.ITEM_NOT_OWNED
+    BillingResponse.ITEM_NOT_OWNED,
+    BillingResponse.OPERATION_TIMEOUT,
   })
   @Retention(SOURCE)
   public @interface BillingResponse {
@@ -123,6 +124,8 @@ public abstract class BillingClient {
     int ITEM_ALREADY_OWNED = 7;
     /** Failure to consume since item is not owned */
     int ITEM_NOT_OWNED = 8;
+    /** Asynchronous operation timed out before completion */
+    int OPERATION_TIMEOUT = 9;
   }
 
   /**
