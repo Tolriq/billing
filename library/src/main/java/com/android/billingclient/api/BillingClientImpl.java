@@ -21,6 +21,7 @@ import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.os.ResultReceiver;
 import android.support.annotation.IntDef;
@@ -94,7 +95,7 @@ class BillingClientImpl extends BillingClient {
   private static final int MIN_IAP_VERSION = 3;
 
   /** Main thread handler to post results from Executor. */
-  private final Handler mUiThreadHandler = new Handler();
+  private final Handler mUiThreadHandler = new Handler(Looper.getMainLooper());
 
   /**
    * Wrapper on top of PURCHASES_UPDATED broadcast receiver to return all purchases receipts to the
