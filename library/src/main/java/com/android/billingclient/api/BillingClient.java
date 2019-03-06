@@ -77,6 +77,7 @@ public abstract class BillingClient {
 
   /** Possible response codes. */
   @IntDef({
+    BillingResponse.SERVICE_TIMEOUT,
     BillingResponse.FEATURE_NOT_SUPPORTED,
     BillingResponse.SERVICE_DISCONNECTED,
     BillingResponse.OK,
@@ -87,11 +88,12 @@ public abstract class BillingClient {
     BillingResponse.DEVELOPER_ERROR,
     BillingResponse.ERROR,
     BillingResponse.ITEM_ALREADY_OWNED,
-    BillingResponse.ITEM_NOT_OWNED,
-    BillingResponse.OPERATION_TIMEOUT,
+    BillingResponse.ITEM_NOT_OWNED
   })
   @Retention(SOURCE)
   public @interface BillingResponse {
+    /** The request has reached the maximum timeout before Google Play responds. */
+    int SERVICE_TIMEOUT = -3;
     /** Requested feature is not supported by Play Store on the current device. */
     int FEATURE_NOT_SUPPORTED = -2;
     /**
@@ -124,8 +126,6 @@ public abstract class BillingClient {
     int ITEM_ALREADY_OWNED = 7;
     /** Failure to consume since item is not owned */
     int ITEM_NOT_OWNED = 8;
-    /** Asynchronous operation timed out before completion */
-    int OPERATION_TIMEOUT = 9;
   }
 
   /**
@@ -231,7 +231,7 @@ public abstract class BillingClient {
      *
      * @param listener Your listener for app initiated and Play Store initiated purchases.
      */
-   @UiThread
+    @UiThread
     public Builder setListener(PurchasesUpdatedListener listener) {
       mListener = listener;
       return this;
