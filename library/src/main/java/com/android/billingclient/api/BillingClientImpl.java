@@ -675,7 +675,7 @@ class BillingClientImpl extends BillingClient {
                       params.getSkuDetails().getType(),
                       null,
                       extraParams);
-            } catch (final RemoteException e) {
+            } catch (final Exception e) {
               postToUiThread(
                   new Runnable() {
                     @Override
@@ -799,7 +799,7 @@ class BillingClientImpl extends BillingClient {
       try {
         skuDetails =
             mService.getSkuDetails(3, mApplicationContext.getPackageName(), skuType, querySkus);
-      } catch (RemoteException e) {
+      } catch (Exception e) {
         String msg = "querySkuDetailsAsync got a remote exception (try to reconnect): " + e;
         BillingHelper.logWarn(TAG, msg);
         return new SkuDetailsResult(
@@ -885,7 +885,7 @@ class BillingClientImpl extends BillingClient {
               mService.getPurchases(
                   3 /* apiVersion */, mApplicationContext.getPackageName(), skuType, continueToken);
         }
-      } catch (RemoteException e) {
+      } catch (Exception e) {
         BillingHelper.logWarn(
             TAG, "Got exception trying to get purchases: " + e + "; try to reconnect");
         return new PurchasesResult(BillingResponse.SERVICE_DISCONNECTED, /* purchasesList */ null);
@@ -1000,7 +1000,7 @@ class BillingClientImpl extends BillingClient {
               }
             });
       }
-    } catch (final RemoteException e) {
+    } catch (final Exception e) {
       postToUiThread(
           new Runnable() {
             @Override
@@ -1096,7 +1096,7 @@ class BillingClientImpl extends BillingClient {
                         mClientState = ClientState.DISCONNECTED;
                         mService = null;
                       }
-                    } catch (RemoteException e) {
+                    } catch (Exception e) {
                       BillingHelper.logWarn(
                               TAG, "Exception while checking if billing is supported; try to reconnect");
                       mClientState = ClientState.DISCONNECTED;
