@@ -1120,9 +1120,6 @@ class BillingClientImpl extends BillingClient {
     private final BillingClientStateListener mListener;
 
     private BillingServiceConnection(@NonNull BillingClientStateListener listener) {
-      if (listener == null) {
-        throw new RuntimeException("Please specify a listener to know when init is done.");
-      }
       mListener = listener;
     }
 
