@@ -618,10 +618,6 @@ class BillingClientImpl extends BillingClient {
           @Override
           public void run() {
             final SkuDetailsResult result = querySkuDetailsInternal(skuType, skusList);
-            // Check thread as the task could be interrupted due to timeout
-            if (Thread.interrupted()) {
-              return;
-            }
             // Post the result to main thread
             postToUiThread(
                 new Runnable() {
@@ -687,10 +683,6 @@ class BillingClientImpl extends BillingClient {
           public void run() {
             final PurchasesResult result =
                 queryPurchasesInternal(skuType, /* queryHistory= */ true);
-            // Check thread as the task could be interrupted due to timeout
-            if (Thread.interrupted()) {
-              return;
-            }
             // Post the result to main thread
             postToUiThread(
                 new Runnable() {
@@ -760,10 +752,6 @@ class BillingClientImpl extends BillingClient {
 
             final int responseCode = BillingHelper.getResponseCodeFromBundle(buyIntentBundle, TAG);
 
-            // Check thread as the task could be interrupted due to timeout
-            if (Thread.interrupted()) {
-              return;
-            }
             postToUiThread(
                 new Runnable() {
                   @Override
@@ -1079,6 +1067,10 @@ class BillingClientImpl extends BillingClient {
 
   /** Execute the runnable on the UI/Main Thread */
   private void postToUiThread(Runnable runnable) {
+    // Check thread as the task could be interrupted due to timeout and prevent double notification
+    if (Thread.interrupted()) {
+      return;
+    }
     mUiThreadHandler.post(runnable);
   }
 
@@ -1091,27 +1083,22 @@ class BillingClientImpl extends BillingClient {
           mService.consumePurchase(
               3 /* apiVersion */, mApplicationContext.getPackageName(), purchaseToken);
 
-      // Check thread as the task could be interrupted due to timeout
-      if (Thread.interrupted()) {
-        return;
-      }
       if (responseCode == BillingResponse.OK) {
-        BillingHelper.logVerbose(TAG, "Successfully consumed purchase.");
         postToUiThread(
             new Runnable() {
               @Override
               public void run() {
+                BillingHelper.logVerbose(TAG, "Successfully consumed purchase.");
                 listener.onConsumeResponse(responseCode, purchaseToken);
               }
             });
       } else {
-        BillingHelper.logWarn(
-            TAG, "Error consuming purchase with token. Response code: " + responseCode);
         postToUiThread(
             new Runnable() {
               @Override
               public void run() {
-                BillingHelper.logWarn(TAG, "Error consuming purchase.");
+                BillingHelper.logWarn(
+                        TAG, "Error consuming purchase with token. Response code: " + responseCode);
                 listener.onConsumeResponse(responseCode, purchaseToken);
               }
             });
@@ -1148,10 +1135,6 @@ class BillingClientImpl extends BillingClient {
     }
 
     private void notifySetupResult(final int result) {
-      // Check thread as the task could be interrupted due to timeout
-      if (Thread.interrupted()) {
-        return;
-      }
       postToUiThread(
           new Runnable() {
             @Override
