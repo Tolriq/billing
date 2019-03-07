@@ -1203,7 +1203,7 @@ class BillingClientImpl extends BillingClient {
               return null;
             }
           },
-          FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
+          BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
           new Runnable() {
             @Override
             public void run() {
