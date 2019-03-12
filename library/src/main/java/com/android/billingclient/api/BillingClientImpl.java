@@ -597,7 +597,6 @@ class BillingClientImpl extends BillingClient {
     }
   }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void querySkuDetailsAsync(
       SkuDetailsParams params, final SkuDetailsResponseListener listener) {
@@ -623,7 +622,7 @@ class BillingClientImpl extends BillingClient {
       return;
     }
 
-    executeAsync(
+    Future result = executeAsync(
         new Callable<Void>() {
           @Override
           public Void call() {
@@ -648,9 +647,11 @@ class BillingClientImpl extends BillingClient {
                 BillingResponse.SERVICE_TIMEOUT, /* skuDetailsList */ null);
           }
         });
+    if (result == null) {
+      listener.onSkuDetailsResponse(BillingResponse.SERVICE_DISCONNECTED, /* skuDetailsList */ null);
+    }
   }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void consumeAsync(final String purchaseToken, final ConsumeResponseListener listener) {
     if (!isReady()) {
@@ -666,7 +667,7 @@ class BillingClientImpl extends BillingClient {
       return;
     }
 
-    executeAsync(
+    Future result = executeAsync(
         new Callable<Void>() {
           @Override
           public Void call() {
@@ -681,9 +682,11 @@ class BillingClientImpl extends BillingClient {
             listener.onConsumeResponse(BillingResponse.SERVICE_TIMEOUT, purchaseToken);
           }
         });
+    if (result == null) {
+      listener.onConsumeResponse(BillingResponse.SERVICE_DISCONNECTED, /* purchaseToken */ null);
+    }
   }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void queryPurchaseHistoryAsync(
       final @SkuType String skuType, final PurchaseHistoryResponseListener listener) {
@@ -693,7 +696,7 @@ class BillingClientImpl extends BillingClient {
       return;
     }
 
-    executeAsync(
+    Future result = executeAsync(
         new Callable<Void>() {
           @Override
           public Void call() {
@@ -719,9 +722,11 @@ class BillingClientImpl extends BillingClient {
                 BillingResponse.SERVICE_TIMEOUT, /* purchasesList= */ null);
           }
         });
+    if (result == null) {
+      listener.onPurchaseHistoryResponse(BillingResponse.SERVICE_DISCONNECTED, /* purchasesList */ null);
+    }
   }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void loadRewardedSku(
       final RewardLoadParams params, final RewardResponseListener listener) {
@@ -732,7 +737,7 @@ class BillingClientImpl extends BillingClient {
       return;
     }
 
-    executeAsync(
+    Future result = executeAsync(
         new Callable<Void>() {
           @Override
           public Void call() {
@@ -787,6 +792,9 @@ class BillingClientImpl extends BillingClient {
             listener.onRewardResponse(BillingResponse.SERVICE_TIMEOUT);
           }
         });
+    if (result == null) {
+      listener.onRewardResponse(BillingResponse.SERVICE_DISCONNECTED);
+    }
   }
 
   private Bundle constructExtraParams(BillingFlowParams params) {
@@ -1157,12 +1165,11 @@ class BillingClientImpl extends BillingClient {
           });
     }
 
-    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
       BillingHelper.logVerbose(TAG, "Billing service connected.");
       mService = IInAppBillingService.Stub.asInterface(service);
-      executeAsync(
+      Future result = executeAsync(
           new Callable<Void>() {
             @Override
             public Void call() {
@@ -1231,6 +1238,9 @@ class BillingClientImpl extends BillingClient {
               notifySetupResult(BillingResponse.SERVICE_TIMEOUT);
             }
           });
+      if (result == null) {
+        notifySetupResult(BillingResponse.SERVICE_DISCONNECTED);
+      }
     }
   }
 }
