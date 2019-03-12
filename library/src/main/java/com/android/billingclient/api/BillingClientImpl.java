@@ -54,11 +54,14 @@ import org.json.JSONException;
 class BillingClientImpl extends BillingClient {
   private static final String TAG = "BillingClient";
 
-  /** The maximum waiting time in millisecond for Play in-app billing synchronous service call. */
-  private static final long FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS = 10_00L;
+  /**
+   * The maximum waiting time in millisecond for Play in-app billing synchronous service call. The
+   * call is blocking UI thread so we set to 5 seconds to avoid ANRs.
+   */
+  private static final long SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS = 5_000L;
 
   /** The maximum waiting time in millisecond for Play in-app billing asynchronous service call. */
-  private static final long BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS = 30_000L;
+  private static final long ASYNCHRONOUS_TIMEOUT_IN_MILLISECONDS = 30_000L;
 
   /**
    * The maximum number of items than can be requested by a call to Billing service's
@@ -352,12 +355,14 @@ class BillingClientImpl extends BillingClient {
                     SkuType.SUBS,
                     extraParamsFinal);
               }
-            }, FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, null);
+            },
+            SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
+            /* onTimeout= */ null);
 
     try {
       Bundle priceChangeIntentBundle =
           futurePriceChangeIntentBundle.get(
-              FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
+              SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
 
       int responseCode = BillingHelper.getResponseCodeFromBundle(priceChangeIntentBundle, TAG);
       if (responseCode != BillingResponse.OK) {
@@ -389,9 +394,7 @@ class BillingClientImpl extends BillingClient {
       activity.startActivity(intent);
     } catch (TimeoutException | CancellationException ex) {
       String msg =
-          "Time out while launching Price Change Flow for sku: "
-              + sku
-              + "; try to reconnect";
+          "Time out while launching Price Change Flow for sku: " + sku + "; try to reconnect";
       BillingHelper.logWarn(TAG, msg);
       listener.onPriceChangeConfirmationResult(BillingResponse.SERVICE_TIMEOUT);
     } catch (Exception ex) {
@@ -482,7 +485,9 @@ class BillingClientImpl extends BillingClient {
                       null,
                       extraParamsFinal);
                 }
-              }, FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, null);
+              },
+              SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
+              /* onTimeout= */ null);
     } else if (isSubscriptionUpdate) {
       // For subscriptions update we are calling corresponding service method
       futureBuyIntentBundle =
@@ -498,7 +503,9 @@ class BillingClientImpl extends BillingClient {
                       SkuType.SUBS,
                       /* developerPayload */ null);
                 }
-              }, FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, null);
+              },
+              SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
+              /* onTimeout= */ null);
     } else {
       futureBuyIntentBundle =
           executeAsync(
@@ -512,12 +519,14 @@ class BillingClientImpl extends BillingClient {
                       skuType,
                       /* developerPayload */ null);
                 }
-              }, FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, null);
+              },
+              SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
+              /* onTimeout= */ null);
     }
     try {
       Bundle buyIntentBundle =
           futureBuyIntentBundle.get(
-              FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
+              SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
       int responseCode = BillingHelper.getResponseCodeFromBundle(buyIntentBundle, TAG);
       if (responseCode != BillingResponse.OK) {
         BillingHelper.logWarn(TAG, "Unable to buy item, Error response code: " + responseCode);
@@ -535,20 +544,17 @@ class BillingClientImpl extends BillingClient {
       activity.startActivity(intent);
     } catch (TimeoutException | CancellationException ex) {
       String msg =
-          "Time out while launching billing flow: "
+          "Time out while launching billing flow: " + "; for sku: " + newSku + "; try to reconnect";
+      BillingHelper.logWarn(TAG, msg);
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.SERVICE_TIMEOUT);
+    } catch (Exception ex) {
+      String msg =
+          "Exception while launching billing flow: "
               + "; for sku: "
               + newSku
               + "; try to reconnect";
       BillingHelper.logWarn(TAG, msg);
-      return broadcastFailureAndReturnBillingResponse(BillingResponse.SERVICE_TIMEOUT);
-    } catch (Exception ex) {
-        String msg =
-            "Exception while launching billing flow: "
-                + "; for sku: "
-                + newSku
-                + "; try to reconnect";
-        BillingHelper.logWarn(TAG, msg);
-        return broadcastFailureAndReturnBillingResponse(BillingResponse.SERVICE_DISCONNECTED);
+      return broadcastFailureAndReturnBillingResponse(BillingResponse.SERVICE_DISCONNECTED);
     }
 
     return BillingResponse.OK;
@@ -578,10 +584,12 @@ class BillingClientImpl extends BillingClient {
               public PurchasesResult call() throws Exception {
                 return queryPurchasesInternal(skuType, false /* queryHistory */);
               }
-            }, FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, null);
+            },
+            SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
+            /* onTimeout= */ null);
     try {
       return futurePurchaseResult.get(
-          FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
+          SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
     } catch (TimeoutException | CancellationException ex) {
       return new PurchasesResult(BillingResponse.SERVICE_TIMEOUT, /* purchasesList */ null);
     } catch (Exception ex) {
@@ -589,6 +597,7 @@ class BillingClientImpl extends BillingClient {
     }
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void querySkuDetailsAsync(
       SkuDetailsParams params, final SkuDetailsResponseListener listener) {
@@ -615,7 +624,7 @@ class BillingClientImpl extends BillingClient {
     }
 
     executeAsync(
-        new Callable<Void> (){
+        new Callable<Void>() {
           @Override
           public Void call() {
             final SkuDetailsResult result = querySkuDetailsInternal(skuType, skusList);
@@ -624,21 +633,24 @@ class BillingClientImpl extends BillingClient {
                 new Runnable() {
                   @Override
                   public void run() {
-                    listener.onSkuDetailsResponse(result.getResponseCode(), result.getSkuDetailsList());
+                    listener.onSkuDetailsResponse(
+                        result.getResponseCode(), result.getSkuDetailsList());
                   }
                 });
             return null;
           }
         },
-        BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
+        ASYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
         new Runnable() {
           @Override
           public void run() {
-            listener.onSkuDetailsResponse(BillingResponse.SERVICE_TIMEOUT, /* skuDetailsList */ null);
+            listener.onSkuDetailsResponse(
+                BillingResponse.SERVICE_TIMEOUT, /* skuDetailsList */ null);
           }
         });
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void consumeAsync(final String purchaseToken, final ConsumeResponseListener listener) {
     if (!isReady()) {
@@ -655,14 +667,14 @@ class BillingClientImpl extends BillingClient {
     }
 
     executeAsync(
-        new  Callable<Void> () {
+        new Callable<Void>() {
           @Override
           public Void call() {
             consumeInternal(purchaseToken, listener);
             return null;
           }
         },
-        BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
+        ASYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
         new Runnable() {
           @Override
           public void run() {
@@ -671,6 +683,7 @@ class BillingClientImpl extends BillingClient {
         });
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void queryPurchaseHistoryAsync(
       final @SkuType String skuType, final PurchaseHistoryResponseListener listener) {
@@ -681,7 +694,7 @@ class BillingClientImpl extends BillingClient {
     }
 
     executeAsync(
-        new  Callable<Void> (){
+        new Callable<Void>() {
           @Override
           public Void call() {
             final PurchasesResult result =
@@ -698,7 +711,7 @@ class BillingClientImpl extends BillingClient {
             return null;
           }
         },
-        BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
+        ASYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
         new Runnable() {
           @Override
           public void run() {
@@ -708,6 +721,7 @@ class BillingClientImpl extends BillingClient {
         });
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   @Override
   public void loadRewardedSku(
       final RewardLoadParams params, final RewardResponseListener listener) {
@@ -719,7 +733,7 @@ class BillingClientImpl extends BillingClient {
     }
 
     executeAsync(
-        new  Callable<Void> () {
+        new Callable<Void>() {
           @Override
           public Void call() {
             Bundle extraParams = new Bundle();
@@ -766,7 +780,7 @@ class BillingClientImpl extends BillingClient {
             return null;
           }
         },
-        BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
+        ASYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
         new Runnable() {
           @Override
           public void run() {
@@ -800,16 +814,18 @@ class BillingClientImpl extends BillingClient {
   }
 
   /**
-   * Execute a task in a background thread
+   * Execute a task in a background thread.
+   *
    * @param callable The task to run
-   * @param maxTimeout The duration before the task is timed out and cancelled.
-   *                   Actual applied timeout is 95% of that value.
-   * @param onTimeout A runnable to execute when the task time out.
+   * @param maxTimeout The duration before the task is timed out and cancelled. Actual applied
+   *     timeout is 95% of that value.
+   * @param onTimeout A runnable to execute when the task time out
    * @return A future allowing to wait on the task
    */
-  private @Nullable <T> Future<T> executeAsync(@NonNull Callable<T> callable, long maxTimeout,
-                                               @Nullable final Runnable onTimeout) {
-    long actualTimeout = new Double(0.95 * maxTimeout).longValue();
+  @Nullable
+  private <T> Future<T> executeAsync(
+      @NonNull Callable<T> callable, long maxTimeout, @Nullable final Runnable onTimeout) {
+    long actualTimeout = (long) (0.95 * maxTimeout);
     if (mExecutorService == null) {
       mExecutorService = Executors.newFixedThreadPool(BillingHelper.NUMBER_OF_CORES);
     }
@@ -852,12 +868,14 @@ class BillingClientImpl extends BillingClient {
                     skuType,
                     generateVrBundle());
               }
-            }, FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, null);
+            },
+            SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
+            /* onTimeout= */ null);
 
     try {
       int supportedResult =
           futureSupportedResult.get(
-              FOREGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
+              SYNCHRONOUS_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
       return (supportedResult == BillingResponse.OK)
           ? BillingResponse.OK
           : BillingResponse.FEATURE_NOT_SUPPORTED;
@@ -1096,7 +1114,7 @@ class BillingClientImpl extends BillingClient {
               @Override
               public void run() {
                 BillingHelper.logWarn(
-                        TAG, "Error consuming purchase with token. Response code: " + responseCode);
+                    TAG, "Error consuming purchase with token. Response code: " + responseCode);
                 listener.onConsumeResponse(responseCode, purchaseToken);
               }
             });
@@ -1139,6 +1157,7 @@ class BillingClientImpl extends BillingClient {
           });
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
       BillingHelper.logVerbose(TAG, "Billing service connected.");
@@ -1203,7 +1222,7 @@ class BillingClientImpl extends BillingClient {
               return null;
             }
           },
-          BACKGROUND_FUTURE_TIMEOUT_IN_MILLISECONDS,
+          ASYNCHRONOUS_TIMEOUT_IN_MILLISECONDS,
           new Runnable() {
             @Override
             public void run() {
