@@ -124,7 +124,7 @@ class BillingClientImpl extends BillingClient {
   private IInAppBillingService mService;
 
   /** Connection to the service. */
-  private ServiceConnection mServiceConnection;
+  private BillingServiceConnection mServiceConnection;
 
   /** If subscriptions are is supported (for billing v3 and higher) or not. */
   private boolean mSubscriptionsSupported;
@@ -293,6 +293,9 @@ class BillingClientImpl extends BillingClient {
   public void endConnection() {
     try {
       mBroadcastManager.destroy();
+      if (mServiceConnection != null) {
+          mServiceConnection.setFinalized();
+      }
       if (mServiceConnection != null && mService != null) {
         BillingHelper.logVerbose(TAG, "Unbinding from service.");
         mApplicationContext.unbindService(mServiceConnection);
@@ -1141,7 +1144,9 @@ class BillingClientImpl extends BillingClient {
 
   /** Connect with Billing service and notify listener about important states. */
   private final class BillingServiceConnection implements ServiceConnection {
-    private final BillingClientStateListener mListener;
+    private final Object lock = new Object();
+    private Boolean finalized = false;
+    private BillingClientStateListener mListener;
 
     private BillingServiceConnection(@NonNull BillingClientStateListener listener) {
       mListener = listener;
@@ -1152,7 +1157,18 @@ class BillingClientImpl extends BillingClient {
       BillingHelper.logWarn(TAG, "Billing service disconnected.");
       mService = null;
       mClientState = ClientState.DISCONNECTED;
-      mListener.onBillingServiceDisconnected();
+        synchronized (lock) {
+          if (mListener != null) {
+              mListener.onBillingServiceDisconnected();
+          }
+        }
+    }
+
+    void setFinalized() {
+      synchronized (lock) {
+        mListener = null;
+        finalized = true;
+      }
     }
 
     private void notifySetupResult(final int result) {
@@ -1160,7 +1176,11 @@ class BillingClientImpl extends BillingClient {
           new Runnable() {
             @Override
             public void run() {
-              mListener.onBillingSetupFinished(result);
+              synchronized (lock) {
+                if (mListener != null) {
+                  mListener.onBillingSetupFinished(result);
+                }
+              }
             }
           });
     }
@@ -1173,6 +1193,11 @@ class BillingClientImpl extends BillingClient {
           new Callable<Void>() {
             @Override
             public Void call() {
+               synchronized (lock) {
+                if (finalized) {
+                  return null;
+                }
+              }
               int setupResponse = BillingResponse.BILLING_UNAVAILABLE;
               try {
                 String packageName = mApplicationContext.getPackageName();
